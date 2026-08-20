@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Canteen Portal — Meal Registration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #171b27; --card: #1e2333; --border: #2a3045;
+    --accent: #f0a500; --accent2: #ff6b35; --text: #e8ecf4; --muted: #7a8299;
+    --success: #3ecf8e; --error: #ff4d6d; --radius: 14px;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+  header { width: 100%; padding: 1.3rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; background: rgba(15,17,23,.92); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 100; }
+  .logo { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; flex-shrink: 0; }
+  .user-badge { margin-left: auto; display: none; align-items: center; gap: .6rem; padding: .4rem .9rem; border: 1px solid var(--border); border-radius: 30px; font-size: .78rem; background: var(--surface); cursor: pointer; }
+  main { width: 100%; max-width: 500px; padding: 2rem 1.2rem; display: flex; flex-direction: column; gap: 1.4rem; }
+  .screen { display: none; flex-direction: column; gap: 1.3rem; }
+  .screen.active { display: flex; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.6rem; }
+  .field { display: flex; flex-direction: column; gap: .45rem; }
+  label { font-size: 0.8rem; color: var(--muted); font-weight: 500; }
+  input[type="text"], input[type="password"], input[type="date"] {
+    background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px;
+    color: var(--text); padding: .72rem 1rem; outline: none; width: 100%; font-size: 0.93rem;
+    transition: border-color .2s;
+  }
+  input:focus { border-color: var(--accent); }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.83rem; color: var(--muted); cursor: pointer; user-select: none; }
+  .checkbox-row input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; flex-shrink: 0; }
+  .btn { border: none; border-radius: 10px; padding: .78rem 1.3rem; font-weight: 600; cursor: pointer; transition: opacity .15s; font-size: 0.9rem; width: 100%; }
+  .btn:active { opacity: 0.82; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .btn-ghost   { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+  .btn-danger  { border: 1px solid var(--error);   color: var(--error);   background: transparent; padding: 0.42rem; border-radius: 8px; font-size: 0.78rem; font-weight: 600; }
+  .btn-reg     { border: 1px solid var(--success); color: var(--success); background: transparent; padding: 0.42rem; border-radius: 8px; font-size: 0.78rem; font-weight: 600; }
+  .alert { border-radius: 10px; padding: .7rem 1rem; font-size: .83rem; display: none; }
+  .alert.show { display: block; }
+  .alert-err { background: rgba(255,77,109,.1);  color: var(--error);   border: 1px solid var(--error);   }
+  .alert-ok  { background: rgba(62,207,142,.1); color: var(--success); border: 1px solid var(--success); }
+
+  /* 3-column meal grid */
+  .meals-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; }
+  .meal-card { border-radius: 12px; border: 1.5px solid var(--border); padding: .9rem .6rem; background: var(--surface); display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5px; }
+  .meal-card.registered { border-color: var(--success); background: rgba(62,207,142,0.05); }
+  .meal-icon svg { display: block; }
+  .meal-name   { font-weight: 600; font-size: 0.82rem; }
+  .meal-time   { font-size: 0.66rem; color: var(--muted); }
+  .meal-status { font-size: 0.7rem; color: var(--muted); }
+  .meal-card.registered .meal-status { color: var(--success); }
+
+  /* Date navigator */
+  .date-nav { display: flex; align-items: center; gap: 8px; }
+  .date-nav input { flex: 1; }
+  .date-nav .nav-btn { min-width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .date-display-box { flex: 1; background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; padding: .72rem 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.93rem; transition: border-color .2s; user-select: none; }
+  .date-display-box:hover { border-color: var(--accent); }
+
+  /* Stats */
+  .stats-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat-box  { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: .65rem .5rem; text-align: center; }
+  .stat-num  { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+  .stat-lbl  { font-size: 0.65rem; color: var(--muted); margin-top: 2px; }
+
+  /* Filter tabs */
+  .filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .filter-tab  { padding: 3px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--muted); transition: all .15s; }
+  .filter-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  /* Meal pills */
+  .meal-pill { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize; }
+  .pill-breakfast { background: rgba(251,191,36,.15); color: #fbbf24; }
+  .pill-lunch     { background: rgba(52,211,153,.15); color: #34d399; }
+  .pill-dinner    { background: rgba(251,146,60,.15);  color: #fb923c; }
+
+  .reg-row { padding: .58rem .4rem; border-bottom: 1px solid rgba(42,48,69,.5); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .reg-date { min-width: 105px; font-size: .8rem; color: var(--muted); line-height: 1.3; }
+
+  .empty-state { text-align: center; padding: 1.8rem 1rem; color: var(--muted); font-size: .85rem; }
+  .empty-icon  { font-size: 2rem; display: block; margin-bottom: 8px; }
+
+  .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Token status styles */
+  .token-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: .68rem; font-weight: 600; padding: 3px 8px;
+    border-radius: 20px; margin-top: 4px; width: 100%;
+    justify-content: center; letter-spacing: .01em;
+  }
+  .token-collected {
+    background: rgba(62,207,142,.12); color: #3ecf8e;
+    border: 1px solid rgba(62,207,142,.3);
+  }
+  .token-pending {
+    background: rgba(240,165,0,.08); color: #f0a500;
+    border: 1px solid rgba(240,165,0,.25);
+  }
+  .token-na {
+    background: rgba(122,130,153,.08); color: var(--muted);
+    border: 1px solid rgba(122,130,153,.2);
+  }
+  /* Token pill in history list */
+  .tok-pill-yes { font-size:.65rem; padding:2px 7px; border-radius:10px; background:rgba(62,207,142,.12); color:#3ecf8e; border:1px solid rgba(62,207,142,.3); font-weight:600; white-space:nowrap; }
+  .tok-pill-no  { font-size:.65rem; padding:2px 7px; border-radius:10px; background:rgba(240,165,0,.08); color:#f0a500; border:1px solid rgba(240,165,0,.25); font-weight:600; white-space:nowrap; }
+  .tok-pill-na  { font-size:.65rem; padding:2px 7px; border-radius:10px; background:rgba(122,130,153,.08); color:var(--muted); border:1px solid rgba(122,130,153,.2); font-weight:600; white-space:nowrap; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🍽</div>
+  <div style="margin-left:10px;font-weight:700;font-size:.98rem;">Canteen Portal</div>
+  <div class="user-badge" id="userBadge" onclick="logout()">
+    <span id="badgeName"></span>
+    <span style="color:var(--error);margin-left:8px;font-size:.75rem;">Logout</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Choose -->
+  <div class="screen active" id="screenChoose">
+    <h1 style="font-size:1.9rem;line-height:1.25;">Welcome to<br><em style="color:var(--accent);font-style:normal;">Canteen Portal</em></h1>
+    <p style="color:var(--muted);font-size:.86rem;margin-top:-4px;">Register your South Indian meals with ease.</p>
+    <div class="card" style="display:flex;flex-direction:column;gap:11px;">
+      <button class="btn btn-primary" onclick="showScreen('screenFirstLogin')">🔑 First-time Login (use DOB)</button>
+      <button class="btn btn-ghost"   onclick="showScreen('screenLogin')">🔐 Login with Password</button>
+    </div>
+    <p id="autoCheckNote" style="text-align:center;font-size:.73rem;color:var(--muted);">Checking for saved session…</p>
+  </div>
+
+  <!-- First Login -->
+  <div class="screen" id="screenFirstLogin">
+    <h2>Verify Identity</h2>
+    <div class="card" style="display:flex;flex-direction:column;gap:13px;">
+      <div class="field"><label>Employee ID</label><input type="text" id="fl_empid" placeholder="e.g. EMP001"></div>
+      <div class="field"><label>Date of Birth</label><input type="date" id="fl_dob"></div>
+      <div id="fl_alert" class="alert"></div>
+      <button class="btn btn-primary" onclick="doFirstLogin()">Verify Identity</button>
+      <button class="btn btn-ghost"   onclick="showScreen('screenChoose')">← Back</button>
+    </div>
+  </div>
+
+  <!-- Set Password -->
+  <div class="screen" id="screenSetPwd">
+    <h2>Create Password</h2>
+    <div class="card" style="display:flex;flex-direction:column;gap:13px;">
+      <div class="field"><label>New Password</label><input type="password" id="np_pass" placeholder="Min 6 characters"></div>
+      <div class="field"><label>Confirm Password</label><input type="password" id="np_confirm" placeholder="Repeat password"></div>
+      <div id="np_alert" class="alert"></div>
+      <button class="btn btn-primary" onclick="doSetPassword()">Activate Account</button>
+    </div>
+  </div>
+
+  <!-- Login -->
+  <div class="screen" id="screenLogin">
+    <h2>Login</h2>
+    <div class="card" style="display:flex;flex-direction:column;gap:13px;">
+      <div class="field"><label>Employee ID</label><input type="text" id="lg_empid" placeholder="e.g. EMP001"></div>
+      <div class="field"><label>Password</label><input type="password" id="lg_pass" placeholder="Your password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="rememberMe" checked>
+        Remember me on this device (30 days)
+      </label>
+      <div id="lg_alert" class="alert"></div>
+      <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Login</button>
+      <button class="btn btn-ghost"   onclick="showScreen('screenChoose')">← Back</button>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div class="screen" id="screenDashboard">
+
+    <!-- Greeting card -->
+    <div class="card" style="background:linear-gradient(135deg,#1e2333,#2a3045);border:none;display:flex;align-items:center;gap:14px;">
+      <div id="greetIcon" style="font-size:2.2rem;"></div>
+      <div>
+        <h2 id="welcomeName" style="font-size:1.08rem;"></h2>
+        <p  id="welcomeMeta" style="color:var(--muted);font-size:.76rem;margin-top:3px;"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-bar">
+      <div class="stat-box"><div class="stat-num" id="statTotal">—</div><div class="stat-lbl">Total Meals</div></div>
+      <div class="stat-box"><div class="stat-num" id="statUp">—</div><div class="stat-lbl">Upcoming</div></div>
+      <div class="stat-box"><div class="stat-num" id="statPast">—</div><div class="stat-lbl">Past Meals</div></div>
+    </div>
+
+    <!-- Daily Registration -->
+    <div class="card">
+      <h2 style="margin-bottom:12px;font-size:1rem;">Meal Registration</h2>
+      <div class="date-nav">
+        <button class="nav-btn" onclick="shiftDate(-1)">‹</button>
+        <!-- Custom date display shows DD/MM/YYYY; hidden input handles native picker -->
+        <div class="date-display-box" onclick="openDatePicker()" title="Click to pick date">
+          <span id="dateDisplay">28/03/2026</span>
+          <span style="font-size:.7rem;color:var(--muted);margin-left:4px;">📅</span>
+        </div>
+        <input type="date" id="mealDate" onchange="onDatePicked()"
+               style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;">
+        <button class="nav-btn" onclick="shiftDate(1)">›</button>
+      </div>
+      <div id="dateLabel" style="text-align:center;font-size:.78rem;color:var(--accent);margin:8px 0 14px;"></div>
+      <div class="meals-grid" id="mealsGrid"></div>
+      <div id="meal_alert" class="alert" style="margin-top:11px;"></div>
+    </div>
+
+    <!-- All Registered Meals (replaces Upcoming Week) -->
+    <div class="card">
+      <h2 style="margin-bottom:10px;font-size:1rem;">Registered Meals</h2>
+      <div class="filter-tabs" id="filterTabs">
+        <div class="filter-tab active" onclick="setFilter('all',this)">All</div>
+        <div class="filter-tab" onclick="setFilter('upcoming',this)">Upcoming</div>
+        <div class="filter-tab" onclick="setFilter('past',this)">Past</div>
+        <div class="filter-tab" onclick="setFilter('breakfast',this)">Breakfast</div>
+        <div class="filter-tab" onclick="setFilter('lunch',this)">Lunch</div>
+        <div class="filter-tab" onclick="setFilter('dinner',this)">Dinner</div>
+      </div>
+      <div id="allMealsList"><div style="color:var(--muted);font-size:.83rem;padding:.5rem 0;">Loading…</div></div>
+    </div>
+
+  </div><!-- /screenDashboard -->
+</main>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const API = "https://canteen-portal-api.onrender.com";
+let session  = { emp_id: null, name: null };
+let firstLoginEmpId = null;
+let allRegs  = [];
+let activeFilter = 'all';
+let tokenCache = {};  // key: "meal|date" → token info or null
+
+// ── Meal cutoff times (IST, 24h) — used for "upcoming vs past" logic ─────────
+// These match your meal_timelines table end_time column.
+// If /meal-timelines API loads successfully, these get overwritten with live DB values.
+// Displayed label for each meal is also set from DB (or hidden if API fails).
+const MEAL_CUTOFFS = { breakfast: 9*60, lunch: 15*60, dinner: 20*60+30 }; // minutes since midnight IST
+// breakfast=9:00 AM, lunch=3:00 PM, dinner=8:30 PM
+
+// MEALS array — time label is hidden until /meal-timelines loads; it gets replaced from DB
+let MEALS = [
+  { type:'breakfast', label:'Breakfast', time:'', open: true },
+  { type:'lunch',     label:'Lunch',     time:'', open: true },
+  { type:'dinner',    label:'Dinner',    time:'', open: true },
+];
+
+// South Indian SVG icons
+const MEAL_SVG = {
+  breakfast: `<svg width="46" height="46" viewBox="0 0 46 46" fill="none">
+    <path d="M8 20 Q23 8 38 20" stroke="#fbbf24" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <line x1="23" y1="8" x2="23" y2="5" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="14" y1="11" x2="12" y2="9" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="32" y1="11" x2="34" y2="9" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+    <ellipse cx="23" cy="40" rx="17" ry="4" fill="#3a3226" opacity=".5"/>
+    <ellipse cx="23" cy="38" rx="16" ry="3.5" fill="#5c4a2a"/>
+    <ellipse cx="23" cy="35" rx="14" ry="4.5" fill="#2d6a2e" opacity=".7"/>
+    <ellipse cx="16" cy="33" rx="6.5" ry="3.5" fill="#e8e0d0"/>
+    <ellipse cx="16" cy="32.2" rx="6" ry="2.8" fill="#fdf8ee"/>
+    <ellipse cx="28" cy="33" rx="6.5" ry="3.5" fill="#e8e0d0"/>
+    <ellipse cx="28" cy="32.2" rx="6" ry="2.8" fill="#fdf8ee"/>
+    <ellipse cx="23" cy="27" rx="4" ry="2.2" fill="#c2440a" opacity=".85"/>
+    <ellipse cx="23" cy="26.5" rx="3.5" ry="1.7" fill="#d94f10"/>
+    <circle cx="23" cy="26" r="1.2" fill="#7dbf72"/>
+  </svg>`,
+  lunch: `<svg width="46" height="46" viewBox="0 0 46 46" fill="none">
+    <circle cx="23" cy="10" r="5" fill="#fbbf24"/>
+    <line x1="23" y1="3" x2="23" y2="1" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="30" y1="5.5" x2="32" y2="3.5" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="16" y1="5.5" x2="14" y2="3.5" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="32" y1="10" x2="34.5" y2="10" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="14" y1="10" x2="11.5" y2="10" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+    <ellipse cx="23" cy="40" rx="17" ry="4" fill="#3a3226" opacity=".5"/>
+    <ellipse cx="23" cy="38" rx="16" ry="3.5" fill="#5c4a2a"/>
+    <ellipse cx="23" cy="35" rx="14" ry="5" fill="#2d6a2e" opacity=".7"/>
+    <ellipse cx="23" cy="31" rx="8" ry="4" fill="#f0efdf"/>
+    <ellipse cx="23" cy="30" rx="7.5" ry="3.2" fill="#fafaf0"/>
+    <ellipse cx="11" cy="34" rx="3.8" ry="2.2" fill="#c2440a" opacity=".9"/>
+    <ellipse cx="35" cy="34" rx="3.2" ry="1.9" fill="#b35900" opacity=".85"/>
+    <ellipse cx="23" cy="25" rx="5.5" ry="1.6" fill="#d4b483" opacity=".9"/>
+    <circle cx="11" cy="29" r="1.5" fill="#e06030"/>
+  </svg>`,
+  dinner: `<svg width="46" height="46" viewBox="0 0 46 46" fill="none">
+    <path d="M32 8 Q26 9 24 16 Q30 15 32 8Z" fill="#c9d6ff" opacity=".9"/>
+    <circle cx="16" cy="9"  r="1"   fill="#c9d6ff" opacity=".7"/>
+    <circle cx="36" cy="14" r="1.2" fill="#c9d6ff" opacity=".6"/>
+    <circle cx="11" cy="16" r=".8"  fill="#c9d6ff" opacity=".5"/>
+    <circle cx="38" cy="8"  r=".7"  fill="#c9d6ff" opacity=".5"/>
+    <ellipse cx="23" cy="40" rx="17" ry="4" fill="#3a3226" opacity=".5"/>
+    <ellipse cx="23" cy="38" rx="16" ry="3.5" fill="#5c4a2a"/>
+    <ellipse cx="23" cy="35" rx="13" ry="3.5" fill="#b89050"/>
+    <ellipse cx="23" cy="33.5" rx="12.5" ry="3" fill="#c8a060"/>
+    <ellipse cx="23" cy="32" rx="12" ry="2.6" fill="#d8b070"/>
+    <path d="M16 32 Q18 31.3 20 32" stroke="#9a7030" stroke-width=".9" fill="none" stroke-linecap="round"/>
+    <path d="M24 32 Q26 31.3 28 32" stroke="#9a7030" stroke-width=".9" fill="none" stroke-linecap="round"/>
+    <ellipse cx="11" cy="35" rx="3.5" ry="2" fill="#8b3a00" opacity=".9"/>
+    <ellipse cx="35" cy="35" rx="3.5" ry="2" fill="#6b2d00" opacity=".85"/>
+    <ellipse cx="23" cy="27" rx="4" ry="1.8" fill="#d4a020" opacity=".8"/>
+  </svg>`,
+};
+
+// ── Utilities ───────────────────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+async function apiFetch(path, body = null) {
+  const opts = body
+    ? { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }
+    : { method:'GET' };
+  const r    = await fetch(API + path, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail || 'Request failed');
+  return data;
+}
+
+function setAlert(id, msg, type = 'err') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = `alert alert-${type} show`;
+  el.textContent = (type === 'err' ? '⚠️ ' : '✅ ') + msg;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+// Returns current IST date string YYYY-MM-DD
+function todayIST() {
+  const now = new Date(Date.now() + 5.5 * 3600000);
+  return now.toISOString().split('T')[0];
+}
+
+// Returns current IST time as minutes since midnight
+function istMinutes() {
+  const now = new Date(Date.now() + 5.5 * 3600000);
+  return now.getUTCHours() * 60 + now.getUTCMinutes();
+}
+
+// Format date as DD/MM/YYYY display string
+function fmtDateDDMMYYYY(d) {
+  // d is YYYY-MM-DD string
+  const [y, m, day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+
+// Format date as "Sat, 28 Mar, 2026"
+function fmtDate(d) {
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', {
+    weekday:'short', day:'numeric', month:'short', year:'numeric'
+  });
+}
+
+function getGreet() {
+  const h = new Date(Date.now() + 5.5*3600000).getUTCHours();
+  if (h < 12) return { text:'Good Morning',   icon:'🌅' };
+  if (h < 17) return { text:'Good Afternoon', icon:'☀️' };
+  return        { text:'Good Evening',    icon:'🌙' };
+}
+
+// ── Date navigator ──────────────────────────────────────────────────────────
+// We store the current date as a YYYY-MM-DD string in a JS variable
+// and render it ourselves as DD/MM/YYYY — avoiding browser locale issues
+// with <input type="date"> which always internally stores YYYY-MM-DD
+// but displays in the OS locale (often MM/DD/YYYY on en-US systems).
+let currentDateStr = todayIST(); // YYYY-MM-DD
+
+function renderDateDisplay() {
+  document.getElementById('dateDisplay').textContent = fmtDateDDMMYYYY(currentDateStr);
+  // Keep hidden input in sync for any code that reads it
+  document.getElementById('mealDate').value = currentDateStr;
+}
+
+function shiftDate(delta) {
+  // Parse YYYY-MM-DD directly to avoid timezone offset issues.
+  // Using new Date() + toISOString() causes UTC drift in IST (UTC+5:30),
+  // making left button skip 2 days and right button do nothing.
+  const [y, m, d] = currentDateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + delta); // local date math, no UTC shift
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  currentDateStr = `${yy}-${mm}-${dd}`;
+  renderDateDisplay();
+  loadMeals();
+}
+
+function openDatePicker() {
+  // Trigger native date picker via hidden input
+  document.getElementById('mealDate').showPicker
+    ? document.getElementById('mealDate').showPicker()
+    : document.getElementById('mealDate').click();
+}
+
+function onDatePicked() {
+  const val = document.getElementById('mealDate').value; // always YYYY-MM-DD
+  if (val) {
+    currentDateStr = val;
+    renderDateDisplay();
+    loadMeals();
+  }
+}
+
+// ── Meal timeline: fetch from DB ─────────────────────────────────────────────
+async function loadTimelines() {
+  try {
+    const data = await apiFetch('/meal-timelines');
+    MEALS = ['breakfast','lunch','dinner'].map(type => {
+      const t = data[type];
+      // open_today comes from backend (IST time vs end_time)
+      return {
+        type,
+        label: type.charAt(0).toUpperCase() + type.slice(1),
+        time:  t ? `Cutoff ${t.end_time}` : '',   // e.g. "Cutoff 7:00 AM" from DB
+        open:  t ? t.open_today : true,
+      };
+    });
+  } catch(e) {
+    // Fallback: compute open status from hardcoded cutoffs
+    console.warn('meal-timelines API failed, using fallback cutoffs:', e.message);
+    const mins = istMinutes();
+    MEALS = MEALS.map(m => ({ ...m, open: mins < MEAL_CUTOFFS[m.type], time: '' }));
+  }
+}
+
+// ── isPast/isUpcoming helper — meal-level precision ──────────────────────────
+// Cutoff minutes for "past" classification (IST):
+//   breakfast ends 9:00 AM  = 540 min
+//   lunch     ends 3:00 PM  = 900 min
+//   dinner    ends 8:30 PM  = 1230 min
+// A meal is "past" if:
+//   - its date < today, OR
+//   - its date === today AND current IST minutes > meal's cutoff
+const DISPLAY_CUTOFFS = { breakfast: 9*60, lunch: 15*60, dinner: 20*60+30 };
+
+function isMealPast(mealDateStr, mealType) {
+  const today = todayIST();
+  if (mealDateStr < today) return true;
+  if (mealDateStr > today) return false;
+  // Today — check if cutoff time has passed
+  return istMinutes() > (DISPLAY_CUTOFFS[mealType] || 0);
+}
+
+// ── Remember Me / Auto-login ────────────────────────────────────────────────
+function saveSession(emp_id, name) {
+  try { localStorage.setItem('canteen_s', JSON.stringify({ emp_id, name, ts: Date.now() })); } catch(_){}
+}
+function clearSession() {
+  try { localStorage.removeItem('canteen_s'); } catch(_){}
+}
+function tryAutoLogin() {
+  try {
+    const raw = localStorage.getItem('canteen_s');
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s.emp_id || (Date.now() - s.ts) > 30*24*3600000) { clearSession(); return false; }
+    startSession(s.emp_id, s.name, false);
+    return true;
+  } catch(_) { return false; }
+}
+
+async function startSession(emp_id, name, save) {
+  session = { emp_id, name };
+  if (save && document.getElementById('rememberMe')?.checked) saveSession(emp_id, name);
+  const g = getGreet();
+  document.getElementById('greetIcon').textContent = g.icon;
+  document.getElementById('welcomeName').textContent = `${g.text}, ${name}!`;
+  document.getElementById('welcomeMeta').textContent =
+    `Employee ID: ${emp_id}  •  ${new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'})}`;
+  document.getElementById('badgeName').textContent  = name;
+  document.getElementById('userBadge').style.display = 'flex';
+  currentDateStr = todayIST();
+  renderDateDisplay();
+  showScreen('screenDashboard');
+  await loadTimelines();   // must be first — populates MEALS with DB cutoff times
+  loadMeals();
+  loadAllMeals();
+}
+
+// ── Auth ────────────────────────────────────────────────────────────────────
+async function doFirstLogin() {
+  const emp_id = document.getElementById('fl_empid').value.trim();
+  const dob    = document.getElementById('fl_dob').value;
+  if (!emp_id || !dob) return setAlert('fl_alert', 'Please fill all fields');
+  try {
+    await apiFetch('/first-login', { emp_id, dob });
+    firstLoginEmpId = emp_id;
+    showScreen('screenSetPwd');
+  } catch(e) {
+    if (e.message.includes('already')) {
+      setAlert('fl_alert', 'Account already activated — please use Login with Password instead.');
+    } else {
+      setAlert('fl_alert', e.message);
+    }
+  }
+}
+
+async function doSetPassword() {
+  const p1 = document.getElementById('np_pass').value;
+  const p2 = document.getElementById('np_confirm').value;
+  if (!p1 || p1.length < 6) return setAlert('np_alert', 'Password must be at least 6 characters');
+  if (p1 !== p2)             return setAlert('np_alert', 'Passwords do not match');
+  try {
+    await apiFetch('/change-password', { emp_id: firstLoginEmpId, new_password: p1 });
+    setAlert('np_alert', 'Account activated! Redirecting to login…', 'ok');
+    setTimeout(() => {
+      document.getElementById('lg_empid').value = firstLoginEmpId;
+      showScreen('screenLogin');
+    }, 1600);
+  } catch(e) { setAlert('np_alert', e.message); }
+}
+
+async function doLogin() {
+  const emp_id   = document.getElementById('lg_empid').value.trim();
+  const password = document.getElementById('lg_pass').value;
+  if (!emp_id || !password) return setAlert('lg_alert', 'Please enter Employee ID and password');
+  const btn = document.getElementById('loginBtn');
+  btn.innerHTML = '<span class="spinner"></span> Logging in…';
+  btn.disabled  = true;
+  try {
+    const data = await apiFetch('/login', { emp_id, password });
+    startSession(data.emp_id, data.name, true);
+  } catch(e) {
+    setAlert('lg_alert', e.message);
+  } finally {
+    btn.textContent = 'Login';
+    btn.disabled    = false;
+  }
+}
+
+function logout() {
+  clearSession();
+  session = { emp_id: null, name: null };
+  document.getElementById('userBadge').style.display = 'none';
+  location.reload();
+}
+
+// ── Token helpers ──────────────────────────────────────────────────────────
+async function loadTokensForDate(dateStr) {
+  try {
+    const data = await apiFetch(`/employee/${session.emp_id}/tokens/${dateStr}`);
+    // Cache results
+    const toks = data.tokens || {};
+    ['breakfast','lunch','dinner'].forEach(m => {
+      tokenCache[`${m}|${dateStr}`] = toks[m] || null;
+    });
+  } catch(e) {
+    console.warn('Token fetch failed:', e.message);
+  }
+}
+
+function getTokenBadgeHTML(mealType, dateStr, isRegistered, isPastMeal) {
+  const tok = tokenCache[`${mealType}|${dateStr}`];
+  if (!isRegistered) return '';
+  if (!isPastMeal) {
+    // Meal not yet closed — token window hasn't opened or is open
+    if (tok) {
+      return `<div class="token-badge token-collected">🎫 Token #${tok.token_number} Collected${tok.issued_at ? ` · ${tok.issued_at}` : ''}</div>`;
+    }
+    return `<div class="token-badge token-pending">⏳ Token Not Yet Collected</div>`;
+  }
+  // Past meal
+  if (tok) {
+    return `<div class="token-badge token-collected">🎫 Token #${tok.token_number} Collected${tok.issued_at ? ` · ${tok.issued_at}` : ''}</div>`;
+  }
+  return `<div class="token-badge token-na">✗ Token Not Collected</div>`;
+}
+
+// ── Daily Meals ─────────────────────────────────────────────────────────────
+async function loadMeals() {
+  const dateStr = currentDateStr;
+  const today   = todayIST();
+  const isPast  = dateStr < today;
+  const isToday = dateStr === today;
+
+  let lbl = fmtDate(dateStr);
+  if (isToday)       lbl += ' (Today)';
+  else if (isPast)   lbl += ' (Past)';
+  else               lbl += ' (Upcoming)';
+  document.getElementById('dateLabel').textContent = lbl;
+
+  try {
+    // Fetch registrations and token status in parallel
+    const [data] = await Promise.all([
+      apiFetch(`/meals/${session.emp_id}/${dateStr}`),
+      loadTokensForDate(dateStr)
+    ]);
+    const regSet = new Set(data.registered_meals);
+    document.getElementById('mealsGrid').innerHTML = MEALS.map(m => {
+      const isReg    = regSet.has(m.type);
+      const cutoffOk = isToday ? m.open : true;
+      const canAct   = !isPast && cutoffOk;
+      // Token window has opened if: past date, OR today and after token start (approx after reg cutoff)
+      const isMealClosed = isPast || (isToday && !cutoffOk);
+      const closedBadge = (isToday && !cutoffOk && !isReg)
+        ? `<div style="font-size:.64rem;color:var(--error);margin-top:2px;">⛔ Closed</div>` : '';
+      const dimStyle = (!cutoffOk && !isReg && isToday) ? 'opacity:.55;' : '';
+      const timeLabel = m.time ? `<div class="meal-time">${m.time}</div>` : '';
+      const tokenBadge = getTokenBadgeHTML(m.type, dateStr, isReg, isMealClosed);
+      return `<div class="meal-card${isReg ? ' registered' : ''}" style="${dimStyle}">
+        <div class="meal-icon">${MEAL_SVG[m.type]}</div>
+        <div class="meal-name">${m.label}</div>
+        ${timeLabel}
+        <div class="meal-status">${isReg ? '✓ Registered' : '○ Not registered'}</div>
+        ${tokenBadge}
+        ${closedBadge}
+        <button class="btn ${isReg ? 'btn-danger' : 'btn-reg'}" style="width:100%;margin-top:7px;"
+          ${canAct ? '' : 'disabled'}
+          onclick="toggleMeal('${m.type}','${dateStr}',${!isReg})">
+          ${isReg ? 'Unregister' : '+ Register'}
+        </button>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function toggleMeal(type, dateStr, add) {
+  try {
+    await apiFetch(add ? '/meals/register' : '/meals/unregister',
+      { emp_id: session.emp_id, meal_date: dateStr, meal_type: type });
+    loadMeals();
+    loadAllMeals();
+  } catch(e) { setAlert('meal_alert', e.message); }
+}
+
+// ── All Registered Meals ─────────────────────────────────────────────────────
+async function loadAllMeals() {
+  document.getElementById('allMealsList').innerHTML =
+    '<div style="color:var(--muted);font-size:.82rem;padding:.6rem 0;">Loading…</div>';
+  try {
+    const data = await apiFetch(`/employee/${session.emp_id}/meals/with-tokens`);
+    allRegs    = data.registrations || [];
+    updateStats();
+    renderMeals();
+  } catch(e) {
+    // Fallback to old endpoint if new one fails
+    try {
+      const data2 = await apiFetch(`/employee/${session.emp_id}/meals/all`);
+      allRegs = (data2.registrations || []).map(r => ({...r, token: null}));
+      updateStats(); renderMeals();
+    } catch(e2) {
+      document.getElementById('allMealsList').innerHTML =
+        `<div style="color:var(--error);font-size:.82rem;">Failed to load: ${e2.message}</div>`;
+    }
+  }
+}
+
+function updateStats() {
+  // Use meal-level cutoff precision for stats
+  let total = allRegs.length;
+  let past  = allRegs.filter(r => isMealPast(String(r.meal_date), r.meal_type)).length;
+  let up    = total - past;
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statUp').textContent    = up;
+  document.getElementById('statPast').textContent  = past;
+}
+
+function setFilter(f, el) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderMeals();
+}
+
+function mealEmoji(t) {
+  return t === 'breakfast' ? '🥣' : t === 'lunch' ? '🍚' : '🫓';
+}
+
+function renderMeals() {
+  let list = [...allRegs];
+
+  if (activeFilter === 'upcoming') {
+    list = list.filter(r => !isMealPast(String(r.meal_date), r.meal_type));
+  } else if (activeFilter === 'past') {
+    list = list.filter(r => isMealPast(String(r.meal_date), r.meal_type));
+  } else if (['breakfast','lunch','dinner'].includes(activeFilter)) {
+    list = list.filter(r => r.meal_type === activeFilter);
+  }
+
+  const con = document.getElementById('allMealsList');
+  if (!list.length) {
+    con.innerHTML = `<div class="empty-state"><span class="empty-icon">🍽</span>No meals for this filter.</div>`;
+    return;
+  }
+
+  // Group by date, render each meal as its own row with past/upcoming badge
+  // Sort: upcoming first (ascending), then past (descending) — or by date desc for all
+  const today = todayIST();
+
+  // Group
+  const byDate = {};
+  list.forEach(r => {
+    const d = String(r.meal_date);
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(r.meal_type);
+  });
+
+  // Sort dates: future dates ascending on top, past dates descending below
+  const sortedDates = Object.keys(byDate).sort((a, b) => {
+    const aFuture = a >= today;
+    const bFuture = b >= today;
+    if (aFuture && bFuture) return a.localeCompare(b);   // both future: earliest first
+    if (!aFuture && !bFuture) return b.localeCompare(a); // both past: most recent first
+    return aFuture ? -1 : 1;                              // future before past
+  });
+
+  con.innerHTML = sortedDates.map(d => {
+    const meals = byDate[d];
+    // Build per-meal pills with individual past/upcoming badge
+    const pillsHtml = meals.map(t => {
+      const past = isMealPast(d, t);
+      const badge = past
+        ? `<span style="font-size:.6rem;color:var(--muted);vertical-align:middle;"> ✓</span>`
+        : `<span style="font-size:.6rem;color:var(--success);vertical-align:middle;"> ↑</span>`;
+      // Find token info for this meal+date from allRegs
+      const regEntry = allRegs.find(r => String(r.meal_date) === d && r.meal_type === t);
+      const tok = regEntry?.token;
+      let tokHtml = '';
+      if (past || tok) {
+        if (tok) {
+          tokHtml = ` <span class="tok-pill-yes">🎫 #${tok.token_number}${tok.issued_at ? ' · '+tok.issued_at : ''}</span>`;
+        } else if (past) {
+          tokHtml = ` <span class="tok-pill-no">✗ No Token</span>`;
+        }
+      } else {
+        tokHtml = ` <span class="tok-pill-na">⏳ Pending</span>`;
+      }
+      return `<div style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:3px;"><span class="meal-pill pill-${t}">${mealEmoji(t)} ${t}${badge}</span>${tokHtml}</div>`;
+    }).join('');
+
+    // Date-level badge: show "Today", "Upcoming", or "Past"
+    const allPast = meals.every(t => isMealPast(d, t));
+    const allUp   = meals.every(t => !isMealPast(d, t));
+    const dateBadge = d === today
+      ? (allPast
+          ? ' <span style="color:var(--muted);font-size:.65rem;">(Today — done)</span>'
+          : ' <span style="color:var(--accent);font-size:.65rem;">(Today)</span>')
+      : d > today
+        ? ' <span style="color:var(--success);font-size:.65rem;">(Upcoming)</span>'
+        : ' <span style="color:var(--muted);font-size:.65rem;">(Past)</span>';
+
+    return `<div class="reg-row">
+      <div class="reg-date">${fmtDate(d)}${dateBadge}</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${pillsHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Auto-login on load ───────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const ok = tryAutoLogin();
+  if (!ok) {
+    const note = document.getElementById('autoCheckNote');
+    if (note) note.remove();
+  }
+});
+</script>
+</body>
+</html>
