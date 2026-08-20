@@ -1,7 +1,7 @@
 fastapi
+uvicorn
 supabase
 pydantic
 passlib
 bcrypt==4.0.1
 pytz
-uvicorn[standard]
