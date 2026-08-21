@@ -308,7 +308,7 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
     <div class="grip"></div>
     <h2 class="display" id="shTitle">Eating in today?</h2>
-    <p id="shSub">Tell the kitchen once and you're done for the day.</p>
+    <p id="shSub">Tell the kitchen once and you're set for " + dayName(d, { weekday: "long" }) + ".</p>
     <div style="display:flex;flex-direction:column;gap:9px">
       <button class="btn btn-yes" onclick="sheetAnswer(true)">Yes — book all meals</button>
       <button class="btn btn-line" onclick="sheetAnswer(false)">No meals today</button>
@@ -319,13 +319,20 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 
 <div class="toast" id="toast"></div>
 
+<!-- Vite Environment Injection -->
+<script type="module">
+  window.__APP_ENV__ = {
+    API_URL: import.meta.env?.VITE_API_URL || ""
+  };
+</script>
+
 <script>
 /* ═══════════════════════════════════════════════════════
    Canteen Portal
    Today + tomorrow only. One tap per meal. No history.
    ═══════════════════════════════════════════════════════ */
 
-const API = "https://canteen-portal-api.onrender.com";
+const API = (window.__APP_ENV__?.API_URL || "").replace(/\/+$/, "");
 
 const TYPES = ["breakfast", "lunch", "dinner"];
 const LABEL = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner" };
@@ -839,7 +846,7 @@ if ("serviceWorker" in navigator) {
 }
 
 /* Refresh when the app comes back to the foreground */
-document.addEventListener("visibilitychange", () => {
+document.addEventListener("change", () => {
   if (document.visibilityState === "visible" && session) {
     loadTimelines().then(refresh).then(maybePrompt);
   }
