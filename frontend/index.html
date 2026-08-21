@@ -2,763 +2,860 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Canteen Portal — Meal Registration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#EFF1EC" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#101412" media="(prefers-color-scheme: dark)" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<title>Canteen</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #0f1117; --surface: #171b27; --card: #1e2333; --border: #2a3045;
-    --accent: #f0a500; --accent2: #ff6b35; --text: #e8ecf4; --muted: #7a8299;
-    --success: #3ecf8e; --error: #ff4d6d; --radius: 14px;
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --paper:#EFF1EC; --card:#FFFFFF; --sunk:#F5F7F2;
+  --ink:#1B211E; --ink2:#5D6862; --line:#DDE2D8;
+  --turmeric:#C88A12; --leaf:#1F6F52; --chili:#AF3D2A;
+  --leaf-soft:#E4F0EA; --turmeric-soft:#FBF1DC; --chili-soft:#F8E6E2; --on-leaf:#FFFFFF;
+  --r:14px; --shadow:0 1px 2px rgba(27,33,30,.05), 0 8px 24px -16px rgba(27,33,30,.25);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#101412; --card:#1A1F1C; --sunk:#161B18;
+    --ink:#E8EDE7; --ink2:#93A09A; --line:#2B332E;
+    --turmeric:#E9AE3A; --leaf:#45C08D; --chili:#E4705A;
+    --leaf-soft:#16302A; --turmeric-soft:#2E2617; --chili-soft:#31201D; --on-leaf:#0C231B;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.7);
   }
-  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
-  header { width: 100%; padding: 1.3rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; background: rgba(15,17,23,.92); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 100; }
-  .logo { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; flex-shrink: 0; }
-  .user-badge { margin-left: auto; display: none; align-items: center; gap: .6rem; padding: .4rem .9rem; border: 1px solid var(--border); border-radius: 30px; font-size: .78rem; background: var(--surface); cursor: pointer; }
-  main { width: 100%; max-width: 500px; padding: 2rem 1.2rem; display: flex; flex-direction: column; gap: 1.4rem; }
-  .screen { display: none; flex-direction: column; gap: 1.3rem; }
-  .screen.active { display: flex; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.6rem; }
-  .field { display: flex; flex-direction: column; gap: .45rem; }
-  label { font-size: 0.8rem; color: var(--muted); font-weight: 500; }
-  input[type="text"], input[type="password"], input[type="date"] {
-    background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px;
-    color: var(--text); padding: .72rem 1rem; outline: none; width: 100%; font-size: 0.93rem;
-    transition: border-color .2s;
-  }
-  input:focus { border-color: var(--accent); }
-  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.83rem; color: var(--muted); cursor: pointer; user-select: none; }
-  .checkbox-row input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; flex-shrink: 0; }
-  .btn { border: none; border-radius: 10px; padding: .78rem 1.3rem; font-weight: 600; cursor: pointer; transition: opacity .15s; font-size: 0.9rem; width: 100%; }
-  .btn:active { opacity: 0.82; }
-  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
-  .btn-ghost   { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
-  .btn-danger  { border: 1px solid var(--error);   color: var(--error);   background: transparent; padding: 0.42rem; border-radius: 8px; font-size: 0.78rem; font-weight: 600; }
-  .btn-reg     { border: 1px solid var(--success); color: var(--success); background: transparent; padding: 0.42rem; border-radius: 8px; font-size: 0.78rem; font-weight: 600; }
-  .alert { border-radius: 10px; padding: .7rem 1rem; font-size: .83rem; display: none; }
-  .alert.show { display: block; }
-  .alert-err { background: rgba(255,77,109,.1);  color: var(--error);   border: 1px solid var(--error);   }
-  .alert-ok  { background: rgba(62,207,142,.1); color: var(--success); border: 1px solid var(--success); }
+}
 
-  /* 3-column meal grid */
-  .meals-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; }
-  .meal-card { border-radius: 12px; border: 1.5px solid var(--border); padding: .9rem .6rem; background: var(--surface); display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5px; }
-  .meal-card.registered { border-color: var(--success); background: rgba(62,207,142,0.05); }
-  .meal-icon svg { display: block; }
-  .meal-name   { font-weight: 600; font-size: 0.82rem; }
-  .meal-time   { font-size: 0.66rem; color: var(--muted); }
-  .meal-status { font-size: 0.7rem; color: var(--muted); }
-  .meal-card.registered .meal-status { color: var(--success); }
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:'Inter Tight',system-ui,-apple-system,sans-serif;
+  font-size:15px; line-height:1.45; min-height:100dvh;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-font-smoothing:antialiased;
+}
+.display{font-family:'Bricolage Grotesque','Inter Tight',system-ui,sans-serif;font-weight:700;letter-spacing:-.03em;line-height:1.08}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2.5px solid var(--turmeric);outline-offset:2px;border-radius:6px}
 
-  /* Date navigator */
-  .date-nav { display: flex; align-items: center; gap: 8px; }
-  .date-nav input { flex: 1; }
-  .date-nav .nav-btn { min-width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .date-display-box { flex: 1; background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; padding: .72rem 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.93rem; transition: border-color .2s; user-select: none; }
-  .date-display-box:hover { border-color: var(--accent); }
+/* ── Shell ─────────────────────────────────────────── */
+header{
+  position:sticky; top:0; z-index:40;
+  display:flex; align-items:center; gap:9px;
+  padding:calc(.7rem + env(safe-area-inset-top)) 1.15rem .7rem;
+  background:color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+}
+.mark{width:26px;height:26px;border-radius:8px;background:var(--ink);color:var(--paper);
+  display:grid;place-items:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:.82rem;flex-shrink:0}
+.wordmark{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:.95rem;letter-spacing:-.02em}
+.who{margin-left:auto;display:none;align-items:center;gap:6px;background:none;border:1px solid var(--line);
+  border-radius:99px;padding:.3rem .7rem;font-size:.76rem;color:var(--ink2);cursor:pointer}
+.who .dot{width:5px;height:5px;border-radius:99px;background:var(--leaf)}
 
-  /* Stats */
-  .stats-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .stat-box  { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: .65rem .5rem; text-align: center; }
-  .stat-num  { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
-  .stat-lbl  { font-size: 0.65rem; color: var(--muted); margin-top: 2px; }
+main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5rem + env(safe-area-inset-bottom))}
+.screen{display:none;flex-direction:column;gap:1rem}
+.screen.active{display:flex}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.pad{padding:1.1rem}
 
-  /* Filter tabs */
-  .filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-  .filter-tab  { padding: 3px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--muted); transition: all .15s; }
-  .filter-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.eyebrow{font-size:.7rem;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--ink2)}
 
-  /* Meal pills */
-  .meal-pill { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; text-transform: capitalize; }
-  .pill-breakfast { background: rgba(251,191,36,.15); color: #fbbf24; }
-  .pill-lunch     { background: rgba(52,211,153,.15); color: #34d399; }
-  .pill-dinner    { background: rgba(251,146,60,.15);  color: #fb923c; }
+/* ── Buttons ───────────────────────────────────────── */
+.btn{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;
+  min-height:50px;padding:.8rem 1rem;border:1px solid transparent;border-radius:11px;
+  font-weight:600;font-size:.94rem;cursor:pointer;transition:transform .12s, opacity .15s, background .15s}
+.btn:active{transform:scale(.985)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn-primary{background:var(--ink);color:var(--paper)}
+.btn-yes{background:var(--leaf);color:var(--on-leaf)}
+.btn-line{background:var(--card);border-color:var(--line);color:var(--ink)}
+.btn-quiet{background:none;color:var(--ink2);min-height:42px;font-size:.86rem;font-weight:500}
+.btn-sm{min-height:40px;font-size:.83rem;padding:.5rem .9rem;width:auto}
 
-  .reg-row { padding: .58rem .4rem; border-bottom: 1px solid rgba(42,48,69,.5); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .reg-date { min-width: 105px; font-size: .8rem; color: var(--muted); line-height: 1.3; }
+/* ── Auth ──────────────────────────────────────────── */
+.hero{padding:2.4rem 0 .4rem}
+.hero h1{font-size:2.35rem}
+.hero p{color:var(--ink2);margin-top:.6rem;font-size:.95rem;max-width:22rem}
+.field{display:flex;flex-direction:column;gap:.35rem}
+.field label{font-size:.76rem;font-weight:600;color:var(--ink2)}
+.field input{background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:.8rem .85rem;font-size:1rem;width:100%}
+.field input:focus{outline:none;border-color:var(--turmeric);background:var(--card)}
+.check{display:flex;align-items:center;gap:.55rem;font-size:.84rem;color:var(--ink2);cursor:pointer}
+.check input{width:17px;height:17px;accent-color:var(--leaf)}
+.alert{display:none;font-size:.84rem;padding:.65rem .8rem;border-radius:10px;line-height:1.35}
+.alert.show{display:block}
+.alert-err{background:var(--chili-soft);color:var(--chili)}
+.alert-ok{background:var(--leaf-soft);color:var(--leaf)}
 
-  .empty-state { text-align: center; padding: 1.8rem 1rem; color: var(--muted); font-size: .85rem; }
-  .empty-icon  { font-size: 2rem; display: block; margin-bottom: 8px; }
+/* ── Day switch ────────────────────────────────────── */
+.dayswitch{display:flex;gap:4px;background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:4px}
+.dayswitch button{flex:1;background:none;border:none;border-radius:9px;padding:.6rem .4rem;cursor:pointer;
+  font-size:.87rem;font-weight:600;color:var(--ink2);transition:background .15s,color .15s}
+.dayswitch button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.dayswitch button span{display:block;font-size:.68rem;font-weight:500;color:var(--ink2);margin-top:1px}
 
-  .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; vertical-align: middle; margin-right: 6px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* ── Status headline ───────────────────────────────── */
+.status{padding:1.3rem 1.15rem 1.2rem}
+.status h2{font-size:1.72rem;margin:.5rem 0 .35rem}
+.status .sub{font-size:.85rem;color:var(--ink2)}
+.status .sub b{color:var(--ink);font-weight:600}
 
-  /* Token status styles */
-  .token-badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: .68rem; font-weight: 600; padding: 3px 8px;
-    border-radius: 20px; margin-top: 4px; width: 100%;
-    justify-content: center; letter-spacing: .01em;
-  }
-  .token-collected {
-    background: rgba(62,207,142,.12); color: #3ecf8e;
-    border: 1px solid rgba(62,207,142,.3);
-  }
-  .token-pending {
-    background: rgba(240,165,0,.08); color: #f0a500;
-    border: 1px solid rgba(240,165,0,.25);
-  }
-  .token-na {
-    background: rgba(122,130,153,.08); color: var(--muted);
-    border: 1px solid rgba(122,130,153,.2);
-  }
-  /* Token pill in history list */
-  .tok-pill-yes { font-size:.65rem; padding:2px 7px; border-radius:10px; background:rgba(62,207,142,.12); color:#3ecf8e; border:1px solid rgba(62,207,142,.3); font-weight:600; white-space:nowrap; }
-  .tok-pill-no  { font-size:.65rem; padding:2px 7px; border-radius:10px; background:rgba(240,165,0,.08); color:#f0a500; border:1px solid rgba(240,165,0,.25); font-weight:600; white-space:nowrap; }
-  .tok-pill-na  { font-size:.65rem; padding:2px 7px; border-radius:10px; background:rgba(122,130,153,.08); color:var(--muted); border:1px solid rgba(122,130,153,.2); font-weight:600; white-space:nowrap; }
+/* ── Meal rows: the coupon stub ────────────────────── */
+.meals{display:flex;flex-direction:column;gap:8px;margin-top:1rem}
+.meal{position:relative;display:flex;align-items:center;gap:.85rem;width:100%;text-align:left;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:.85rem .95rem .85rem 1rem;min-height:68px;cursor:pointer;overflow:hidden;
+  transition:border-color .18s, background .18s, transform .12s}
+.meal:active{transform:scale(.99)}
+.meal .tile{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;
+  background:var(--sunk);color:var(--ink2);font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:.9rem;
+  transition:background .18s,color .18s}
+.meal .name{display:block;font-weight:600;font-size:.98rem}
+.meal .meta{display:block;font-size:.76rem;color:var(--ink2);margin-top:1px}
+.meal .box{margin-left:auto;width:26px;height:26px;border-radius:8px;border:2px solid var(--line);flex-shrink:0;
+  display:grid;place-items:center;transition:background .18s,border-color .18s}
+.meal .box svg{width:14px;height:14px;stroke:var(--on-leaf);stroke-width:3.2;fill:none;
+  stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.6);transition:opacity .18s,transform .18s}
+
+/* registered state — perforated coupon edge appears */
+.meal.on{border-color:color-mix(in srgb, var(--leaf) 45%, var(--line));background:color-mix(in srgb, var(--leaf-soft) 55%, var(--card))}
+.meal.on .tile{background:var(--leaf);color:var(--on-leaf)}
+.meal.on .box{background:var(--leaf);border-color:var(--leaf)}
+.meal.on .box svg{opacity:1;transform:scale(1)}
+.meal.on::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
+  background:radial-gradient(circle at 0 4px, transparent 0 3.5px, var(--leaf) 3.5px) 0 0/5px 11px repeat-y;
+}
+.meal.collected{border-color:color-mix(in srgb, var(--turmeric) 45%, var(--line))}
+.meal.collected .tile{background:var(--turmeric);color:#fff}
+.meal.collected .box{background:var(--turmeric);border-color:var(--turmeric)}
+.meal.collected .box svg{opacity:1;transform:scale(1);stroke:#fff}
+.meal.collected::before{content:none}
+.meal.locked{opacity:.55;cursor:default}
+.meal.locked .box{border-style:dashed}
+.meal.busy{opacity:.6;pointer-events:none}
+.meal .token{display:inline-flex;align-items:center;gap:.3rem;font-size:.72rem;font-weight:600;
+  color:var(--turmeric);background:var(--turmeric-soft);padding:.12rem .45rem;border-radius:5px;margin-top:3px}
+
+/* ── Quick answer ──────────────────────────────────── */
+.quick{display:flex;gap:8px;margin-top:1rem}
+.quick .btn{flex:1}
+
+/* ── Reminder card ─────────────────────────────────── */
+.rem{display:flex;align-items:flex-start;gap:.8rem}
+.rem .bell{width:36px;height:36px;border-radius:10px;background:var(--turmeric-soft);color:var(--turmeric);
+  display:grid;place-items:center;flex-shrink:0;font-size:1.05rem}
+.rem h3{font-size:.94rem;font-weight:600}
+.rem p{font-size:.8rem;color:var(--ink2);margin-top:2px}
+.times{display:flex;gap:6px;margin-top:.8rem;flex-wrap:wrap}
+.chip{font-size:.74rem;font-weight:600;padding:.25rem .55rem;border-radius:6px;background:var(--sunk);color:var(--ink2);
+  border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.chip.live{background:var(--leaf-soft);color:var(--leaf);border-color:transparent}
+.chip.done{text-decoration:line-through;opacity:.55}
+
+/* ── Bottom sheet prompt ───────────────────────────── */
+.scrim{position:fixed;inset:0;z-index:80;background:rgba(15,20,17,.45);backdrop-filter:blur(3px);
+  display:none;align-items:flex-end;justify-content:center;padding:0}
+.scrim.show{display:flex;animation:fade .2s ease}
+.sheet{width:100%;max-width:440px;background:var(--card);border-radius:20px 20px 0 0;
+  padding:1.4rem 1.15rem calc(1.4rem + env(safe-area-inset-bottom));animation:rise .28s cubic-bezier(.2,.8,.2,1)}
+.grip{width:36px;height:4px;border-radius:99px;background:var(--line);margin:0 auto 1.1rem}
+.sheet h2{font-size:1.5rem;margin-bottom:.4rem}
+.sheet p{font-size:.87rem;color:var(--ink2);margin-bottom:1.15rem}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes rise{from{transform:translateY(100%)}to{transform:translateY(0)}}
+
+/* ── Toast ─────────────────────────────────────────── */
+.toast{position:fixed;left:50%;bottom:calc(1.4rem + env(safe-area-inset-bottom));transform:translate(-50%,140%);
+  z-index:90;background:var(--ink);color:var(--paper);padding:.7rem 1.05rem;border-radius:99px;
+  font-size:.85rem;font-weight:500;max-width:88vw;text-align:center;opacity:0;pointer-events:none;
+  transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .2s}
+.toast.show{transform:translate(-50%,0);opacity:1}
+.toast.bad{background:var(--chili);color:#fff}
+.toast:empty{display:none}
+
+.footnote{text-align:center;font-size:.74rem;color:var(--ink2);line-height:1.5}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">🍽</div>
-  <div style="margin-left:10px;font-weight:700;font-size:.98rem;">Canteen Portal</div>
-  <div class="user-badge" id="userBadge" onclick="logout()">
-    <span id="badgeName"></span>
-    <span style="color:var(--error);margin-left:8px;font-size:.75rem;">Logout</span>
-  </div>
+  <div class="mark">C</div>
+  <div class="wordmark">Canteen</div>
+  <button class="who" id="who" onclick="signOut()"><span class="dot"></span><span id="whoName"></span></button>
 </header>
 
 <main>
 
-  <!-- Choose -->
-  <div class="screen active" id="screenChoose">
-    <h1 style="font-size:1.9rem;line-height:1.25;">Welcome to<br><em style="color:var(--accent);font-style:normal;">Canteen Portal</em></h1>
-    <p style="color:var(--muted);font-size:.86rem;margin-top:-4px;">Register your South Indian meals with ease.</p>
-    <div class="card" style="display:flex;flex-direction:column;gap:11px;">
-      <button class="btn btn-primary" onclick="showScreen('screenFirstLogin')">🔑 First-time Login (use DOB)</button>
-      <button class="btn btn-ghost"   onclick="showScreen('screenLogin')">🔐 Login with Password</button>
+  <!-- ═══ Welcome ═══ -->
+  <section class="screen" id="scWelcome">
+    <div class="hero">
+      <h1 class="display">Are you<br>eating in?</h1>
+      <p>Answer once each morning. Your name goes on the list for breakfast, lunch and dinner.</p>
     </div>
-    <p id="autoCheckNote" style="text-align:center;font-size:.73rem;color:var(--muted);">Checking for saved session…</p>
-  </div>
-
-  <!-- First Login -->
-  <div class="screen" id="screenFirstLogin">
-    <h2>Verify Identity</h2>
-    <div class="card" style="display:flex;flex-direction:column;gap:13px;">
-      <div class="field"><label>Employee ID</label><input type="text" id="fl_empid" placeholder="e.g. EMP001"></div>
-      <div class="field"><label>Date of Birth</label><input type="date" id="fl_dob"></div>
-      <div id="fl_alert" class="alert"></div>
-      <button class="btn btn-primary" onclick="doFirstLogin()">Verify Identity</button>
-      <button class="btn btn-ghost"   onclick="showScreen('screenChoose')">← Back</button>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <button class="btn btn-primary" onclick="go('scLogin')">Sign in</button>
+      <button class="btn btn-line" onclick="go('scFirst')">First time here</button>
     </div>
-  </div>
+    <p class="footnote" id="bootNote">Checking for a saved sign-in…</p>
+  </section>
 
-  <!-- Set Password -->
-  <div class="screen" id="screenSetPwd">
-    <h2>Create Password</h2>
-    <div class="card" style="display:flex;flex-direction:column;gap:13px;">
-      <div class="field"><label>New Password</label><input type="password" id="np_pass" placeholder="Min 6 characters"></div>
-      <div class="field"><label>Confirm Password</label><input type="password" id="np_confirm" placeholder="Repeat password"></div>
-      <div id="np_alert" class="alert"></div>
-      <button class="btn btn-primary" onclick="doSetPassword()">Activate Account</button>
+  <!-- ═══ Sign in ═══ -->
+  <section class="screen" id="scLogin">
+    <div class="hero" style="padding-top:1.6rem"><h1 class="display" style="font-size:1.9rem">Sign in</h1></div>
+    <div class="card pad" style="display:flex;flex-direction:column;gap:.9rem">
+      <div class="field"><label for="lgId">Employee ID</label>
+        <input id="lgId" type="text" autocomplete="username" placeholder="EMP001" /></div>
+      <div class="field"><label for="lgPw">Password</label>
+        <input id="lgPw" type="password" autocomplete="current-password" placeholder="Your password"
+               onkeydown="if(event.key==='Enter')doLogin()" /></div>
+      <label class="check"><input type="checkbox" id="remember" checked /> Keep me signed in on this phone</label>
+      <div class="alert" id="lgAlert"></div>
+      <button class="btn btn-primary" id="lgBtn" onclick="doLogin()">Sign in</button>
+      <button class="btn btn-quiet" onclick="go('scWelcome')">Back</button>
     </div>
-  </div>
+  </section>
 
-  <!-- Login -->
-  <div class="screen" id="screenLogin">
-    <h2>Login</h2>
-    <div class="card" style="display:flex;flex-direction:column;gap:13px;">
-      <div class="field"><label>Employee ID</label><input type="text" id="lg_empid" placeholder="e.g. EMP001"></div>
-      <div class="field"><label>Password</label><input type="password" id="lg_pass" placeholder="Your password" onkeydown="if(event.key==='Enter')doLogin()"></div>
-      <label class="checkbox-row">
-        <input type="checkbox" id="rememberMe" checked>
-        Remember me on this device (30 days)
-      </label>
-      <div id="lg_alert" class="alert"></div>
-      <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Login</button>
-      <button class="btn btn-ghost"   onclick="showScreen('screenChoose')">← Back</button>
+  <!-- ═══ First login ═══ -->
+  <section class="screen" id="scFirst">
+    <div class="hero" style="padding-top:1.6rem">
+      <h1 class="display" style="font-size:1.9rem">Set up your account</h1>
+      <p style="font-size:.88rem">Confirm your date of birth to create a password.</p>
     </div>
-  </div>
-
-  <!-- Dashboard -->
-  <div class="screen" id="screenDashboard">
-
-    <!-- Greeting card -->
-    <div class="card" style="background:linear-gradient(135deg,#1e2333,#2a3045);border:none;display:flex;align-items:center;gap:14px;">
-      <div id="greetIcon" style="font-size:2.2rem;"></div>
-      <div>
-        <h2 id="welcomeName" style="font-size:1.08rem;"></h2>
-        <p  id="welcomeMeta" style="color:var(--muted);font-size:.76rem;margin-top:3px;"></p>
-      </div>
+    <div class="card pad" style="display:flex;flex-direction:column;gap:.9rem">
+      <div class="field"><label for="flId">Employee ID</label><input id="flId" type="text" placeholder="EMP001" /></div>
+      <div class="field"><label for="flDob">Date of birth</label><input id="flDob" type="date" /></div>
+      <div class="alert" id="flAlert"></div>
+      <button class="btn btn-primary" id="flBtn" onclick="doFirstLogin()">Continue</button>
+      <button class="btn btn-quiet" onclick="go('scWelcome')">Back</button>
     </div>
+  </section>
 
-    <!-- Stats -->
-    <div class="stats-bar">
-      <div class="stat-box"><div class="stat-num" id="statTotal">—</div><div class="stat-lbl">Total Meals</div></div>
-      <div class="stat-box"><div class="stat-num" id="statUp">—</div><div class="stat-lbl">Upcoming</div></div>
-      <div class="stat-box"><div class="stat-num" id="statPast">—</div><div class="stat-lbl">Past Meals</div></div>
+  <!-- ═══ Create password ═══ -->
+  <section class="screen" id="scPwd">
+    <div class="hero" style="padding-top:1.6rem"><h1 class="display" style="font-size:1.9rem">Create a password</h1></div>
+    <div class="card pad" style="display:flex;flex-direction:column;gap:.9rem">
+      <div class="field"><label for="npA">New password</label>
+        <input id="npA" type="password" autocomplete="new-password" placeholder="At least 6 characters" /></div>
+      <div class="field"><label for="npB">Repeat password</label>
+        <input id="npB" type="password" autocomplete="new-password" placeholder="Type it again"
+               onkeydown="if(event.key==='Enter')doSetPassword()" /></div>
+      <div class="alert" id="npAlert"></div>
+      <button class="btn btn-primary" id="npBtn" onclick="doSetPassword()">Save password</button>
+    </div>
+  </section>
+
+  <!-- ═══ Home ═══ -->
+  <section class="screen" id="scHome">
+
+    <div class="dayswitch" role="tablist">
+      <button id="tabToday" class="on" role="tab" onclick="setDay(0)">Today<span id="tabTodayD"></span></button>
+      <button id="tabTom" role="tab" onclick="setDay(1)">Tomorrow<span id="tabTomD"></span></button>
     </div>
 
-    <!-- Daily Registration -->
     <div class="card">
-      <h2 style="margin-bottom:12px;font-size:1rem;">Meal Registration</h2>
-      <div class="date-nav">
-        <button class="nav-btn" onclick="shiftDate(-1)">‹</button>
-        <!-- Custom date display shows DD/MM/YYYY; hidden input handles native picker -->
-        <div class="date-display-box" onclick="openDatePicker()" title="Click to pick date">
-          <span id="dateDisplay">28/03/2026</span>
-          <span style="font-size:.7rem;color:var(--muted);margin-left:4px;">📅</span>
+      <div class="status">
+        <div class="eyebrow" id="stEyebrow">Today</div>
+        <h2 class="display" id="stLine">Loading…</h2>
+        <div class="sub" id="stSub"></div>
+
+        <div class="meals" id="meals"></div>
+
+        <div class="quick" id="quick">
+          <button class="btn btn-yes btn-sm" onclick="answerAll(true)">Yes to all</button>
+          <button class="btn btn-line btn-sm" onclick="answerAll(false)">No meals</button>
         </div>
-        <input type="date" id="mealDate" onchange="onDatePicked()"
-               style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;">
-        <button class="nav-btn" onclick="shiftDate(1)">›</button>
       </div>
-      <div id="dateLabel" style="text-align:center;font-size:.78rem;color:var(--accent);margin:8px 0 14px;"></div>
-      <div class="meals-grid" id="mealsGrid"></div>
-      <div id="meal_alert" class="alert" style="margin-top:11px;"></div>
     </div>
 
-    <!-- All Registered Meals (replaces Upcoming Week) -->
-    <div class="card">
-      <h2 style="margin-bottom:10px;font-size:1rem;">Registered Meals</h2>
-      <div class="filter-tabs" id="filterTabs">
-        <div class="filter-tab active" onclick="setFilter('all',this)">All</div>
-        <div class="filter-tab" onclick="setFilter('upcoming',this)">Upcoming</div>
-        <div class="filter-tab" onclick="setFilter('past',this)">Past</div>
-        <div class="filter-tab" onclick="setFilter('breakfast',this)">Breakfast</div>
-        <div class="filter-tab" onclick="setFilter('lunch',this)">Lunch</div>
-        <div class="filter-tab" onclick="setFilter('dinner',this)">Dinner</div>
+    <div class="card pad" id="remCard">
+      <div class="rem">
+        <div class="bell" id="remIcon">🔔</div>
+        <div style="flex:1">
+          <h3 id="remTitle">Daily reminders</h3>
+          <p id="remBody">Get a notification asking if you're eating in. Answer Yes or No right from the notification.</p>
+          <div class="times" id="remTimes"></div>
+        </div>
       </div>
-      <div id="allMealsList"><div style="color:var(--muted);font-size:.83rem;padding:.5rem 0;">Loading…</div></div>
+      <button class="btn btn-primary btn-sm" id="remBtn" style="width:100%;margin-top:1rem" onclick="enableReminders()">Turn on reminders</button>
     </div>
 
-  </div><!-- /screenDashboard -->
+    <div style="display:flex;flex-direction:column;align-items:center;gap:.2rem;margin-top:.2rem">
+      <p class="footnote">Registration closes at each meal's cutoff.</p>
+      <button class="btn btn-quiet" style="width:auto" onclick="signOut()">Sign out</button>
+    </div>
+  </section>
+
 </main>
 
+<!-- ═══ Daily prompt sheet ═══ -->
+<div class="scrim" id="scrim" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
+    <div class="grip"></div>
+    <h2 class="display" id="shTitle">Eating in today?</h2>
+    <p id="shSub">Tell the kitchen once and you're done for the day.</p>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <button class="btn btn-yes" onclick="sheetAnswer(true)">Yes — book all meals</button>
+      <button class="btn btn-line" onclick="sheetAnswer(false)">No meals today</button>
+      <button class="btn btn-quiet" onclick="closeSheet()">I'll pick each meal</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
 <script>
-// ── Config ──────────────────────────────────────────────────────────────────
-const API = "https://canteen-api-service.onrender.com";
-let session  = { emp_id: null, name: null };
-let firstLoginEmpId = null;
-let allRegs  = [];
-let activeFilter = 'all';
-let tokenCache = {};  // key: "meal|date" → token info or null
+/* ═══════════════════════════════════════════════════════
+   Canteen Portal
+   Today + tomorrow only. One tap per meal. No history.
+   ═══════════════════════════════════════════════════════ */
 
-// ── Meal cutoff times (IST, 24h) — used for "upcoming vs past" logic ─────────
-// These match your meal_timelines table end_time column.
-// If /meal-timelines API loads successfully, these get overwritten with live DB values.
-// Displayed label for each meal is also set from DB (or hidden if API fails).
-const MEAL_CUTOFFS = { breakfast: 9*60, lunch: 15*60, dinner: 20*60+30 }; // minutes since midnight IST
-// breakfast=9:00 AM, lunch=3:00 PM, dinner=8:30 PM
+const API = "https://canteen-portal-api.onrender.com";
 
-// MEALS array — time label is hidden until /meal-timelines loads; it gets replaced from DB
-let MEALS = [
-  { type:'breakfast', label:'Breakfast', time:'', open: true },
-  { type:'lunch',     label:'Lunch',     time:'', open: true },
-  { type:'dinner',    label:'Dinner',    time:'', open: true },
-];
+const TYPES = ["breakfast", "lunch", "dinner"];
+const LABEL = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner" };
+const INITIAL = { breakfast: "B", lunch: "L", dinner: "D" };
+const FALLBACK_CUTOFF = { breakfast: 9 * 60, lunch: 15 * 60, dinner: 20 * 60 + 30 };
+const PROMPT_HOURS = [7, 12, 20];
 
-// South Indian SVG icons
-const MEAL_SVG = {
-  breakfast: `<svg width="46" height="46" viewBox="0 0 46 46" fill="none">
-    <path d="M8 20 Q23 8 38 20" stroke="#fbbf24" stroke-width="2" fill="none" stroke-linecap="round"/>
-    <line x1="23" y1="8" x2="23" y2="5" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="14" y1="11" x2="12" y2="9" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="32" y1="11" x2="34" y2="9" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
-    <ellipse cx="23" cy="40" rx="17" ry="4" fill="#3a3226" opacity=".5"/>
-    <ellipse cx="23" cy="38" rx="16" ry="3.5" fill="#5c4a2a"/>
-    <ellipse cx="23" cy="35" rx="14" ry="4.5" fill="#2d6a2e" opacity=".7"/>
-    <ellipse cx="16" cy="33" rx="6.5" ry="3.5" fill="#e8e0d0"/>
-    <ellipse cx="16" cy="32.2" rx="6" ry="2.8" fill="#fdf8ee"/>
-    <ellipse cx="28" cy="33" rx="6.5" ry="3.5" fill="#e8e0d0"/>
-    <ellipse cx="28" cy="32.2" rx="6" ry="2.8" fill="#fdf8ee"/>
-    <ellipse cx="23" cy="27" rx="4" ry="2.2" fill="#c2440a" opacity=".85"/>
-    <ellipse cx="23" cy="26.5" rx="3.5" ry="1.7" fill="#d94f10"/>
-    <circle cx="23" cy="26" r="1.2" fill="#7dbf72"/>
-  </svg>`,
-  lunch: `<svg width="46" height="46" viewBox="0 0 46 46" fill="none">
-    <circle cx="23" cy="10" r="5" fill="#fbbf24"/>
-    <line x1="23" y1="3" x2="23" y2="1" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="30" y1="5.5" x2="32" y2="3.5" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="16" y1="5.5" x2="14" y2="3.5" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="32" y1="10" x2="34.5" y2="10" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="14" y1="10" x2="11.5" y2="10" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
-    <ellipse cx="23" cy="40" rx="17" ry="4" fill="#3a3226" opacity=".5"/>
-    <ellipse cx="23" cy="38" rx="16" ry="3.5" fill="#5c4a2a"/>
-    <ellipse cx="23" cy="35" rx="14" ry="5" fill="#2d6a2e" opacity=".7"/>
-    <ellipse cx="23" cy="31" rx="8" ry="4" fill="#f0efdf"/>
-    <ellipse cx="23" cy="30" rx="7.5" ry="3.2" fill="#fafaf0"/>
-    <ellipse cx="11" cy="34" rx="3.8" ry="2.2" fill="#c2440a" opacity=".9"/>
-    <ellipse cx="35" cy="34" rx="3.2" ry="1.9" fill="#b35900" opacity=".85"/>
-    <ellipse cx="23" cy="25" rx="5.5" ry="1.6" fill="#d4b483" opacity=".9"/>
-    <circle cx="11" cy="29" r="1.5" fill="#e06030"/>
-  </svg>`,
-  dinner: `<svg width="46" height="46" viewBox="0 0 46 46" fill="none">
-    <path d="M32 8 Q26 9 24 16 Q30 15 32 8Z" fill="#c9d6ff" opacity=".9"/>
-    <circle cx="16" cy="9"  r="1"   fill="#c9d6ff" opacity=".7"/>
-    <circle cx="36" cy="14" r="1.2" fill="#c9d6ff" opacity=".6"/>
-    <circle cx="11" cy="16" r=".8"  fill="#c9d6ff" opacity=".5"/>
-    <circle cx="38" cy="8"  r=".7"  fill="#c9d6ff" opacity=".5"/>
-    <ellipse cx="23" cy="40" rx="17" ry="4" fill="#3a3226" opacity=".5"/>
-    <ellipse cx="23" cy="38" rx="16" ry="3.5" fill="#5c4a2a"/>
-    <ellipse cx="23" cy="35" rx="13" ry="3.5" fill="#b89050"/>
-    <ellipse cx="23" cy="33.5" rx="12.5" ry="3" fill="#c8a060"/>
-    <ellipse cx="23" cy="32" rx="12" ry="2.6" fill="#d8b070"/>
-    <path d="M16 32 Q18 31.3 20 32" stroke="#9a7030" stroke-width=".9" fill="none" stroke-linecap="round"/>
-    <path d="M24 32 Q26 31.3 28 32" stroke="#9a7030" stroke-width=".9" fill="none" stroke-linecap="round"/>
-    <ellipse cx="11" cy="35" rx="3.5" ry="2" fill="#8b3a00" opacity=".9"/>
-    <ellipse cx="35" cy="35" rx="3.5" ry="2" fill="#6b2d00" opacity=".85"/>
-    <ellipse cx="23" cy="27" rx="4" ry="1.8" fill="#d4a020" opacity=".8"/>
-  </svg>`,
-};
+let session = null;        // { emp_id, name }
+let dayIdx = 0;            // 0 = today, 1 = tomorrow
+let timelines = {};        // { breakfast: { end_time, open_today } }
+let regs = {};             // { "YYYY-MM-DD": Set<type> }
+let tokens = {};           // { "YYYY-MM-DD": { lunch: {token_number, issued_at} } }
+let answered = {};         // { "YYYY-MM-DD": true }  local record of a Yes/No answer
+let pushMode = "off";      // off | server | local | denied | unsupported
+let firstLoginId = null;
+let localTimers = [];
 
-// ── Utilities ───────────────────────────────────────────────────────────────
-function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+/* ── Small helpers ──────────────────────────────────── */
+const $ = id => document.getElementById(id);
+
+function go(id) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  $(id).classList.add("active");
+  window.scrollTo(0, 0);
 }
 
-async function apiFetch(path, body = null) {
+function toast(msg, bad) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "toast show" + (bad ? " bad" : "");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove("show"), 3200);
+}
+
+function alertBox(id, msg, kind) {
+  const el = $(id);
+  el.className = "alert alert-" + (kind || "err") + " show";
+  el.textContent = msg;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("show"), 6000);
+}
+
+function busy(btnId, on, label) {
+  const b = $(btnId);
+  if (!b) return;
+  if (on) { b._label = b.textContent; b.textContent = label || "Working…"; b.disabled = true; }
+  else { b.textContent = b._label || b.textContent; b.disabled = false; }
+}
+
+async function api(path, body, method) {
   const opts = body
-    ? { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }
-    : { method:'GET' };
-  const r    = await fetch(API + path, opts);
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.detail || 'Request failed');
+    ? { method: method || "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    : { method: method || "GET" };
+  const res = await fetch(API + path, opts);
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok) throw new Error(data.detail || "Something went wrong. Try again.");
   return data;
 }
 
-function setAlert(id, msg, type = 'err') {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.className = `alert alert-${type} show`;
-  el.textContent = (type === 'err' ? '⚠️ ' : '✅ ') + msg;
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.remove('show'), 5000);
+/* ── IST date maths (works on any device timezone) ──── */
+function istDate(offsetDays) {
+  const ms = Date.now() + 5.5 * 3600000 + (offsetDays || 0) * 86400000;
+  return new Date(ms).toISOString().slice(0, 10);
 }
-
-// Returns current IST date string YYYY-MM-DD
-function todayIST() {
-  const now = new Date(Date.now() + 5.5 * 3600000);
-  return now.toISOString().split('T')[0];
-}
-
-// Returns current IST time as minutes since midnight
 function istMinutes() {
-  const now = new Date(Date.now() + 5.5 * 3600000);
-  return now.getUTCHours() * 60 + now.getUTCMinutes();
+  const d = new Date(Date.now() + 5.5 * 3600000);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
 }
-
-// Format date as DD/MM/YYYY display string
-function fmtDateDDMMYYYY(d) {
-  // d is YYYY-MM-DD string
-  const [y, m, day] = d.split('-');
-  return `${day}/${m}/${y}`;
+function dayName(dstr, opts) {
+  return new Date(dstr + "T00:00:00").toLocaleDateString("en-IN",
+    opts || { weekday: "short", day: "numeric", month: "short" });
 }
+function activeDate() { return istDate(dayIdx); }
 
-// Format date as "Sat, 28 Mar, 2026"
-function fmtDate(d) {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', {
-    weekday:'short', day:'numeric', month:'short', year:'numeric'
-  });
-}
-
-function getGreet() {
-  const h = new Date(Date.now() + 5.5*3600000).getUTCHours();
-  if (h < 12) return { text:'Good Morning',   icon:'🌅' };
-  if (h < 17) return { text:'Good Afternoon', icon:'☀️' };
-  return        { text:'Good Evening',    icon:'🌙' };
-}
-
-// ── Date navigator ──────────────────────────────────────────────────────────
-// We store the current date as a YYYY-MM-DD string in a JS variable
-// and render it ourselves as DD/MM/YYYY — avoiding browser locale issues
-// with <input type="date"> which always internally stores YYYY-MM-DD
-// but displays in the OS locale (often MM/DD/YYYY on en-US systems).
-let currentDateStr = todayIST(); // YYYY-MM-DD
-
-function renderDateDisplay() {
-  document.getElementById('dateDisplay').textContent = fmtDateDDMMYYYY(currentDateStr);
-  // Keep hidden input in sync for any code that reads it
-  document.getElementById('mealDate').value = currentDateStr;
-}
-
-function shiftDate(delta) {
-  // Parse YYYY-MM-DD directly to avoid timezone offset issues.
-  // Using new Date() + toISOString() causes UTC drift in IST (UTC+5:30),
-  // making left button skip 2 days and right button do nothing.
-  const [y, m, d] = currentDateStr.split('-').map(Number);
-  const dt = new Date(y, m - 1, d + delta); // local date math, no UTC shift
-  const yy = dt.getFullYear();
-  const mm = String(dt.getMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getDate()).padStart(2, '0');
-  currentDateStr = `${yy}-${mm}-${dd}`;
-  renderDateDisplay();
-  loadMeals();
-}
-
-function openDatePicker() {
-  // Trigger native date picker via hidden input
-  document.getElementById('mealDate').showPicker
-    ? document.getElementById('mealDate').showPicker()
-    : document.getElementById('mealDate').click();
-}
-
-function onDatePicked() {
-  const val = document.getElementById('mealDate').value; // always YYYY-MM-DD
-  if (val) {
-    currentDateStr = val;
-    renderDateDisplay();
-    loadMeals();
-  }
-}
-
-// ── Meal timeline: fetch from DB ─────────────────────────────────────────────
-async function loadTimelines() {
+/* ── Session ────────────────────────────────────────── */
+function saveSession(s) { try { localStorage.setItem("canteen_s", JSON.stringify({ ...s, ts: Date.now() })); } catch (_) {} }
+function loadSession() {
   try {
-    const data = await apiFetch('/meal-timelines');
-    MEALS = ['breakfast','lunch','dinner'].map(type => {
-      const t = data[type];
-      // open_today comes from backend (IST time vs end_time)
-      return {
-        type,
-        label: type.charAt(0).toUpperCase() + type.slice(1),
-        time:  t ? `Cutoff ${t.end_time}` : '',   // e.g. "Cutoff 7:00 AM" from DB
-        open:  t ? t.open_today : true,
-      };
-    });
-  } catch(e) {
-    // Fallback: compute open status from hardcoded cutoffs
-    console.warn('meal-timelines API failed, using fallback cutoffs:', e.message);
-    const mins = istMinutes();
-    MEALS = MEALS.map(m => ({ ...m, open: mins < MEAL_CUTOFFS[m.type], time: '' }));
-  }
+    const s = JSON.parse(localStorage.getItem("canteen_s") || "null");
+    if (!s || !s.emp_id) return null;
+    if (Date.now() - s.ts > 30 * 24 * 3600000) return null;
+    return { emp_id: s.emp_id, name: s.name };
+  } catch (_) { return null; }
+}
+function signOut() {
+  try { localStorage.removeItem("canteen_s"); } catch (_) {}
+  session = null;
+  clearLocalTimers();
+  $("who").style.display = "none";
+  $("bootNote").textContent = "";
+  go("scWelcome");
 }
 
-// ── isPast/isUpcoming helper — meal-level precision ──────────────────────────
-// Cutoff minutes for "past" classification (IST):
-//   breakfast ends 9:00 AM  = 540 min
-//   lunch     ends 3:00 PM  = 900 min
-//   dinner    ends 8:30 PM  = 1230 min
-// A meal is "past" if:
-//   - its date < today, OR
-//   - its date === today AND current IST minutes > meal's cutoff
-const DISPLAY_CUTOFFS = { breakfast: 9*60, lunch: 15*60, dinner: 20*60+30 };
-
-function isMealPast(mealDateStr, mealType) {
-  const today = todayIST();
-  if (mealDateStr < today) return true;
-  if (mealDateStr > today) return false;
-  // Today — check if cutoff time has passed
-  return istMinutes() > (DISPLAY_CUTOFFS[mealType] || 0);
+/* Local record of "I answered for this date" — keyed per employee */
+function answerKey() { return "canteen_ans_" + (session ? session.emp_id : "x"); }
+function loadAnswers() {
+  try { answered = JSON.parse(localStorage.getItem(answerKey()) || "{}"); } catch (_) { answered = {}; }
+  const keep = [istDate(0), istDate(1)];
+  Object.keys(answered).forEach(k => { if (!keep.includes(k)) delete answered[k]; });
+}
+function markAnswered(dstr) {
+  answered[dstr] = true;
+  try { localStorage.setItem(answerKey(), JSON.stringify(answered)); } catch (_) {}
+  if (session) api("/meals/answered", { emp_id: session.emp_id, meal_date: dstr }).catch(() => {});
+  renderReminderTimes();
 }
 
-// ── Remember Me / Auto-login ────────────────────────────────────────────────
-function saveSession(emp_id, name) {
-  try { localStorage.setItem('canteen_s', JSON.stringify({ emp_id, name, ts: Date.now() })); } catch(_){}
-}
-function clearSession() {
-  try { localStorage.removeItem('canteen_s'); } catch(_){}
-}
-function tryAutoLogin() {
+/* ── Auth flows ─────────────────────────────────────── */
+async function doLogin() {
+  const emp_id = $("lgId").value.trim();
+  const password = $("lgPw").value;
+  if (!emp_id || !password) return alertBox("lgAlert", "Enter your employee ID and password.");
+  busy("lgBtn", true, "Signing in…");
   try {
-    const raw = localStorage.getItem('canteen_s');
-    if (!raw) return false;
-    const s = JSON.parse(raw);
-    if (!s.emp_id || (Date.now() - s.ts) > 30*24*3600000) { clearSession(); return false; }
-    startSession(s.emp_id, s.name, false);
-    return true;
-  } catch(_) { return false; }
+    const d = await api("/login", { emp_id, password });
+    if ($("remember").checked) saveSession({ emp_id: d.emp_id, name: d.name });
+    await start(d.emp_id, d.name);
+  } catch (e) {
+    alertBox("lgAlert", e.message === "Invalid password" ? "That password doesn't match. Try again." : e.message);
+  } finally { busy("lgBtn", false); }
 }
 
-async function startSession(emp_id, name, save) {
-  session = { emp_id, name };
-  if (save && document.getElementById('rememberMe')?.checked) saveSession(emp_id, name);
-  const g = getGreet();
-  document.getElementById('greetIcon').textContent = g.icon;
-  document.getElementById('welcomeName').textContent = `${g.text}, ${name}!`;
-  document.getElementById('welcomeMeta').textContent =
-    `Employee ID: ${emp_id}  •  ${new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'})}`;
-  document.getElementById('badgeName').textContent  = name;
-  document.getElementById('userBadge').style.display = 'flex';
-  currentDateStr = todayIST();
-  renderDateDisplay();
-  showScreen('screenDashboard');
-  await loadTimelines();   // must be first — populates MEALS with DB cutoff times
-  loadMeals();
-  loadAllMeals();
-}
-
-// ── Auth ────────────────────────────────────────────────────────────────────
 async function doFirstLogin() {
-  const emp_id = document.getElementById('fl_empid').value.trim();
-  const dob    = document.getElementById('fl_dob').value;
-  if (!emp_id || !dob) return setAlert('fl_alert', 'Please fill all fields');
+  const emp_id = $("flId").value.trim();
+  const dob = $("flDob").value;
+  if (!emp_id || !dob) return alertBox("flAlert", "Enter your employee ID and date of birth.");
+  busy("flBtn", true, "Checking…");
   try {
-    await apiFetch('/first-login', { emp_id, dob });
-    firstLoginEmpId = emp_id;
-    showScreen('screenSetPwd');
-  } catch(e) {
-    if (e.message.includes('already')) {
-      setAlert('fl_alert', 'Account already activated — please use Login with Password instead.');
-    } else {
-      setAlert('fl_alert', e.message);
-    }
-  }
+    await api("/first-login", { emp_id, dob });
+    firstLoginId = emp_id;
+    go("scPwd");
+  } catch (e) {
+    const m = e.message.includes("already") ? "This account is already set up — sign in with your password."
+            : e.message.includes("DOB") ? "That date of birth doesn't match our records."
+            : e.message.includes("not found") ? "No employee found with that ID."
+            : e.message;
+    alertBox("flAlert", m);
+  } finally { busy("flBtn", false); }
 }
 
 async function doSetPassword() {
-  const p1 = document.getElementById('np_pass').value;
-  const p2 = document.getElementById('np_confirm').value;
-  if (!p1 || p1.length < 6) return setAlert('np_alert', 'Password must be at least 6 characters');
-  if (p1 !== p2)             return setAlert('np_alert', 'Passwords do not match');
+  const a = $("npA").value, b = $("npB").value;
+  if (a.length < 6) return alertBox("npAlert", "Use at least 6 characters.");
+  if (a !== b) return alertBox("npAlert", "The two passwords don't match.");
+  busy("npBtn", true, "Saving…");
   try {
-    await apiFetch('/change-password', { emp_id: firstLoginEmpId, new_password: p1 });
-    setAlert('np_alert', 'Account activated! Redirecting to login…', 'ok');
-    setTimeout(() => {
-      document.getElementById('lg_empid').value = firstLoginEmpId;
-      showScreen('screenLogin');
-    }, 1600);
-  } catch(e) { setAlert('np_alert', e.message); }
+    await api("/change-password", { emp_id: firstLoginId, new_password: a });
+    saveSession({ emp_id: firstLoginId, name: firstLoginId });
+    const d = await api("/login", { emp_id: firstLoginId, password: a }).catch(() => null);
+    await start(firstLoginId, d ? d.name : firstLoginId);
+    toast("Password saved");
+  } catch (e) { alertBox("npAlert", e.message); }
+  finally { busy("npBtn", false); }
 }
 
-async function doLogin() {
-  const emp_id   = document.getElementById('lg_empid').value.trim();
-  const password = document.getElementById('lg_pass').value;
-  if (!emp_id || !password) return setAlert('lg_alert', 'Please enter Employee ID and password');
-  const btn = document.getElementById('loginBtn');
-  btn.innerHTML = '<span class="spinner"></span> Logging in…';
-  btn.disabled  = true;
+/* ── Start the app ──────────────────────────────────── */
+async function start(emp_id, name) {
+  session = { emp_id, name: name || emp_id };
+  saveSession(session);
+  loadAnswers();
+  $("whoName").textContent = session.name;
+  $("who").style.display = "flex";
+  $("tabTodayD").textContent = dayName(istDate(0), { day: "numeric", month: "short" });
+  $("tabTomD").textContent = dayName(istDate(1), { day: "numeric", month: "short" });
+  go("scHome");
+
+  await loadTimelines();
+  await refresh();
+  initReminders();
+  maybePrompt();
+}
+
+async function loadTimelines() {
   try {
-    const data = await apiFetch('/login', { emp_id, password });
-    startSession(data.emp_id, data.name, true);
-  } catch(e) {
-    setAlert('lg_alert', e.message);
-  } finally {
-    btn.textContent = 'Login';
-    btn.disabled    = false;
+    timelines = await api("/meal-timelines");
+  } catch (_) {
+    const mins = istMinutes();
+    timelines = {};
+    TYPES.forEach(t => { timelines[t] = { end_time: "", open_today: mins < FALLBACK_CUTOFF[t] }; });
   }
 }
 
-function logout() {
-  clearSession();
-  session = { emp_id: null, name: null };
-  document.getElementById('userBadge').style.display = 'none';
-  location.reload();
-}
-
-// ── Token helpers ──────────────────────────────────────────────────────────
-async function loadTokensForDate(dateStr) {
+async function refresh() {
+  if (!session) return;
+  const d = activeDate();
+  render();  // paint whatever we already have
   try {
-    const data = await apiFetch(`/employee/${session.emp_id}/tokens/${dateStr}`);
-    // Cache results
-    const toks = data.tokens || {};
-    ['breakfast','lunch','dinner'].forEach(m => {
-      tokenCache[`${m}|${dateStr}`] = toks[m] || null;
-    });
-  } catch(e) {
-    console.warn('Token fetch failed:', e.message);
-  }
-}
-
-function getTokenBadgeHTML(mealType, dateStr, isRegistered, isPastMeal) {
-  const tok = tokenCache[`${mealType}|${dateStr}`];
-  if (!isRegistered) return '';
-  if (!isPastMeal) {
-    // Meal not yet closed — token window hasn't opened or is open
-    if (tok) {
-      return `<div class="token-badge token-collected">🎫 Token #${tok.token_number} Collected${tok.issued_at ? ` · ${tok.issued_at}` : ''}</div>`;
-    }
-    return `<div class="token-badge token-pending">⏳ Token Not Yet Collected</div>`;
-  }
-  // Past meal
-  if (tok) {
-    return `<div class="token-badge token-collected">🎫 Token #${tok.token_number} Collected${tok.issued_at ? ` · ${tok.issued_at}` : ''}</div>`;
-  }
-  return `<div class="token-badge token-na">✗ Token Not Collected</div>`;
-}
-
-// ── Daily Meals ─────────────────────────────────────────────────────────────
-async function loadMeals() {
-  const dateStr = currentDateStr;
-  const today   = todayIST();
-  const isPast  = dateStr < today;
-  const isToday = dateStr === today;
-
-  let lbl = fmtDate(dateStr);
-  if (isToday)       lbl += ' (Today)';
-  else if (isPast)   lbl += ' (Past)';
-  else               lbl += ' (Upcoming)';
-  document.getElementById('dateLabel').textContent = lbl;
-
-  try {
-    // Fetch registrations and token status in parallel
-    const [data] = await Promise.all([
-      apiFetch(`/meals/${session.emp_id}/${dateStr}`),
-      loadTokensForDate(dateStr)
+    const [m, tk] = await Promise.all([
+      api("/meals/" + encodeURIComponent(session.emp_id) + "/" + d),
+      api("/employee/" + encodeURIComponent(session.emp_id) + "/tokens/" + d).catch(() => ({ tokens: {} }))
     ]);
-    const regSet = new Set(data.registered_meals);
-    document.getElementById('mealsGrid').innerHTML = MEALS.map(m => {
-      const isReg    = regSet.has(m.type);
-      const cutoffOk = isToday ? m.open : true;
-      const canAct   = !isPast && cutoffOk;
-      // Token window has opened if: past date, OR today and after token start (approx after reg cutoff)
-      const isMealClosed = isPast || (isToday && !cutoffOk);
-      const closedBadge = (isToday && !cutoffOk && !isReg)
-        ? `<div style="font-size:.64rem;color:var(--error);margin-top:2px;">⛔ Closed</div>` : '';
-      const dimStyle = (!cutoffOk && !isReg && isToday) ? 'opacity:.55;' : '';
-      const timeLabel = m.time ? `<div class="meal-time">${m.time}</div>` : '';
-      const tokenBadge = getTokenBadgeHTML(m.type, dateStr, isReg, isMealClosed);
-      return `<div class="meal-card${isReg ? ' registered' : ''}" style="${dimStyle}">
-        <div class="meal-icon">${MEAL_SVG[m.type]}</div>
-        <div class="meal-name">${m.label}</div>
-        ${timeLabel}
-        <div class="meal-status">${isReg ? '✓ Registered' : '○ Not registered'}</div>
-        ${tokenBadge}
-        ${closedBadge}
-        <button class="btn ${isReg ? 'btn-danger' : 'btn-reg'}" style="width:100%;margin-top:7px;"
-          ${canAct ? '' : 'disabled'}
-          onclick="toggleMeal('${m.type}','${dateStr}',${!isReg})">
-          ${isReg ? 'Unregister' : '+ Register'}
-        </button>
-      </div>`;
-    }).join('');
-  } catch(e) { console.error(e); }
+    regs[d] = new Set(m.registered_meals || []);
+    tokens[d] = tk.tokens || {};
+  } catch (e) {
+    toast("Couldn't load your meals. Pull to refresh.", true);
+  }
+  render();
 }
 
-async function toggleMeal(type, dateStr, add) {
-  try {
-    await apiFetch(add ? '/meals/register' : '/meals/unregister',
-      { emp_id: session.emp_id, meal_date: dateStr, meal_type: type });
-    loadMeals();
-    loadAllMeals();
-  } catch(e) { setAlert('meal_alert', e.message); }
+function setDay(i) {
+  dayIdx = i;
+  $("tabToday").classList.toggle("on", i === 0);
+  $("tabTom").classList.toggle("on", i === 1);
+  refresh();
 }
 
-// ── All Registered Meals ─────────────────────────────────────────────────────
-async function loadAllMeals() {
-  document.getElementById('allMealsList').innerHTML =
-    '<div style="color:var(--muted);font-size:.82rem;padding:.6rem 0;">Loading…</div>';
+/* ── Is this meal still open? ───────────────────────── */
+function isOpen(type) {
+  if (dayIdx > 0) return true;                        // tomorrow is always open
+  const t = timelines[type];
+  if (t && typeof t.open_today === "boolean") return t.open_today;
+  return istMinutes() < FALLBACK_CUTOFF[type];
+}
+
+/* ── Render ─────────────────────────────────────────── */
+function render() {
+  const d = activeDate();
+  const set = regs[d] || new Set();
+  const tks = tokens[d] || {};
+  const openTypes = TYPES.filter(isOpen);
+
+  $("stEyebrow").textContent = (dayIdx === 0 ? "Today" : "Tomorrow") + " · " + dayName(d);
+
+  const booked = TYPES.filter(t => set.has(t));
+  if (booked.length === 3) {
+    $("stLine").textContent = "All three meals booked.";
+  } else if (booked.length) {
+    $("stLine").textContent = booked.map(t => LABEL[t]).join(" and ") + " booked.";
+  } else if (answered[d]) {
+    $("stLine").textContent = "No meals " + (dayIdx === 0 ? "today" : "tomorrow") + ".";
+  } else {
+    $("stLine").textContent = dayIdx === 0 ? "Eating in today?" : "Eating in tomorrow?";
+  }
+
+  if (!openTypes.length) {
+    $("stSub").textContent = "Registration has closed for today.";
+  } else if (booked.length) {
+    $("stSub").innerHTML = "Tap a meal to change it.";
+  } else {
+    $("stSub").innerHTML = "Tap the meals you want, or answer below.";
+  }
+  $("quick").style.display = openTypes.length ? "flex" : "none";
+
+  $("meals").innerHTML = TYPES.map(t => {
+    const on = set.has(t);
+    const open = isOpen(t);
+    const tok = tks[t];
+    let meta;
+    if (tok) meta = '<span class="token">Token ' + tok.token_number + (tok.issued_at ? " · " + tok.issued_at : "") + "</span>";
+    else if (!open) meta = "Closed" + (timelines[t] && timelines[t].end_time ? " at " + timelines[t].end_time : "");
+    else if (timelines[t] && timelines[t].end_time) meta = "Book by " + timelines[t].end_time;
+    else meta = on ? "You're on the list" : "Not booked";
+
+    const tappable = open && !tok;
+    return '<button class="meal' + (on ? " on" : "") + (tok ? " collected" : "") +
+      (!open && !tok ? " locked" : "") + '" ' +
+      'data-type="' + t + '" aria-pressed="' + on + '" ' +
+      (tappable ? 'onclick="toggle(\'' + t + '\')"' : "disabled") + '>' +
+        '<span class="tile">' + INITIAL[t] + '</span>' +
+        '<span><span class="name">' + LABEL[t] + '</span><span class="meta">' + meta + '</span></span>' +
+        '<span class="box"><svg viewBox="0 0 20 20"><polyline points="4,10.5 8,14.5 16,5.5"/></svg></span>' +
+      '</button>';
+  }).join("");
+}
+
+/* ── Toggle one meal ────────────────────────────────── */
+async function toggle(type) {
+  const d = activeDate();
+  if (!regs[d]) regs[d] = new Set();
+  const set = regs[d];
+  const wasOn = set.has(type);
+
+  // optimistic
+  if (wasOn) set.delete(type); else set.add(type);
+  render();
+  const row = document.querySelector('.meal[data-type="' + type + '"]');
+  if (row) row.classList.add("busy");
+
   try {
-    const data = await apiFetch(`/employee/${session.emp_id}/meals/with-tokens`);
-    allRegs    = data.registrations || [];
-    updateStats();
-    renderMeals();
-  } catch(e) {
-    // Fallback to old endpoint if new one fails
+    await api(wasOn ? "/meals/unregister" : "/meals/register",
+      { emp_id: session.emp_id, meal_date: d, meal_type: type });
+    if (!wasOn) markAnswered(d);
+    toast(wasOn ? LABEL[type] + " cancelled" : LABEL[type] + " booked");
+  } catch (e) {
+    if (wasOn) set.add(type); else set.delete(type);   // roll back
+    toast(e.message, true);
+  }
+  render();
+}
+
+/* ── Yes to all / No meals ──────────────────────────── */
+async function answerAll(yes) {
+  const d = activeDate();
+  const wanted = yes ? TYPES.filter(isOpen) : [];
+  const prev = new Set(regs[d] || []);
+  regs[d] = new Set(wanted);
+  render();
+  try {
+    await api("/meals/respond", { emp_id: session.emp_id, meal_date: d, meals: wanted });
+    markAnswered(d);
+    toast(yes ? "All meals booked" : "Marked as no meals");
+  } catch (e) {
+    // Backend without /meals/respond — fall back to one call per meal
     try {
-      const data2 = await apiFetch(`/employee/${session.emp_id}/meals/all`);
-      allRegs = (data2.registrations || []).map(r => ({...r, token: null}));
-      updateStats(); renderMeals();
-    } catch(e2) {
-      document.getElementById('allMealsList').innerHTML =
-        `<div style="color:var(--error);font-size:.82rem;">Failed to load: ${e2.message}</div>`;
+      for (const t of TYPES.filter(isOpen)) {
+        const want = wanted.includes(t), had = prev.has(t);
+        if (want === had) continue;
+        await api(want ? "/meals/register" : "/meals/unregister",
+          { emp_id: session.emp_id, meal_date: d, meal_type: t });
+      }
+      markAnswered(d);
+      toast(yes ? "All meals booked" : "Marked as no meals");
+    } catch (e2) {
+      regs[d] = prev;
+      toast(e2.message, true);
     }
   }
+  render();
+  await refresh();
 }
 
-function updateStats() {
-  // Use meal-level cutoff precision for stats
-  let total = allRegs.length;
-  let past  = allRegs.filter(r => isMealPast(String(r.meal_date), r.meal_type)).length;
-  let up    = total - past;
-  document.getElementById('statTotal').textContent = total;
-  document.getElementById('statUp').textContent    = up;
-  document.getElementById('statPast').textContent  = past;
+/* ── Daily prompt sheet ─────────────────────────────── */
+function maybePrompt() {
+  const d = istDate(0);
+  if (answered[d]) return;
+  if ((regs[d] || new Set()).size) return;           // already booked something today
+  if (!TYPES.some(t => isOpen(t))) return;           // everything closed already
+  if (sessionStorage.getItem("canteen_sheet_" + d)) return;  // don't nag twice per app open
+  openSheet();
+}
+function openSheet() {
+  const d = istDate(0);
+  $("shTitle").textContent = "Eating in today?";
+  $("shSub").textContent = "Tell the kitchen once and you're set for " + dayName(d, { weekday: "long" }) + ".";
+  $("scrim").classList.add("show");
+  sessionStorage.setItem("canteen_sheet_" + d, "1");
+}
+function closeSheet() { $("scrim").classList.remove("show"); }
+async function sheetAnswer(yes) {
+  closeSheet();
+  if (dayIdx !== 0) setDay(0);
+  await answerAll(yes);
 }
 
-function setFilter(f, el) {
-  activeFilter = f;
-  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  renderMeals();
-}
+/* ═══════════════════════════════════════════════════════
+   Reminders
+   Preferred: Web Push from the server (works with the
+   browser closed). Falls back to on-device reminders that
+   fire while the portal is open in a tab.
+   ═══════════════════════════════════════════════════════ */
 
-function mealEmoji(t) {
-  return t === 'breakfast' ? '🥣' : t === 'lunch' ? '🍚' : '🫓';
-}
-
-function renderMeals() {
-  let list = [...allRegs];
-
-  if (activeFilter === 'upcoming') {
-    list = list.filter(r => !isMealPast(String(r.meal_date), r.meal_type));
-  } else if (activeFilter === 'past') {
-    list = list.filter(r => isMealPast(String(r.meal_date), r.meal_type));
-  } else if (['breakfast','lunch','dinner'].includes(activeFilter)) {
-    list = list.filter(r => r.meal_type === activeFilter);
+async function initReminders() {
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+    pushMode = "unsupported";
+    return renderReminders();
   }
-
-  const con = document.getElementById('allMealsList');
-  if (!list.length) {
-    con.innerHTML = `<div class="empty-state"><span class="empty-icon">🍽</span>No meals for this filter.</div>`;
-    return;
+  try {
+    const reg = await navigator.serviceWorker.register("sw.js");
+    await navigator.serviceWorker.ready;
+    if (Notification.permission === "granted") {
+      const ok = await subscribePush(reg);
+      pushMode = ok ? "server" : "local";
+      if (!ok) scheduleLocal();
+    } else if (Notification.permission === "denied") {
+      pushMode = "denied";
+    } else {
+      pushMode = "off";
+    }
+  } catch (e) {
+    pushMode = Notification.permission === "granted" ? "local" : "off";
+    if (pushMode === "local") scheduleLocal();
   }
-
-  // Group by date, render each meal as its own row with past/upcoming badge
-  // Sort: upcoming first (ascending), then past (descending) — or by date desc for all
-  const today = todayIST();
-
-  // Group
-  const byDate = {};
-  list.forEach(r => {
-    const d = String(r.meal_date);
-    if (!byDate[d]) byDate[d] = [];
-    byDate[d].push(r.meal_type);
-  });
-
-  // Sort dates: future dates ascending on top, past dates descending below
-  const sortedDates = Object.keys(byDate).sort((a, b) => {
-    const aFuture = a >= today;
-    const bFuture = b >= today;
-    if (aFuture && bFuture) return a.localeCompare(b);   // both future: earliest first
-    if (!aFuture && !bFuture) return b.localeCompare(a); // both past: most recent first
-    return aFuture ? -1 : 1;                              // future before past
-  });
-
-  con.innerHTML = sortedDates.map(d => {
-    const meals = byDate[d];
-    // Build per-meal pills with individual past/upcoming badge
-    const pillsHtml = meals.map(t => {
-      const past = isMealPast(d, t);
-      const badge = past
-        ? `<span style="font-size:.6rem;color:var(--muted);vertical-align:middle;"> ✓</span>`
-        : `<span style="font-size:.6rem;color:var(--success);vertical-align:middle;"> ↑</span>`;
-      // Find token info for this meal+date from allRegs
-      const regEntry = allRegs.find(r => String(r.meal_date) === d && r.meal_type === t);
-      const tok = regEntry?.token;
-      let tokHtml = '';
-      if (past || tok) {
-        if (tok) {
-          tokHtml = ` <span class="tok-pill-yes">🎫 #${tok.token_number}${tok.issued_at ? ' · '+tok.issued_at : ''}</span>`;
-        } else if (past) {
-          tokHtml = ` <span class="tok-pill-no">✗ No Token</span>`;
-        }
-      } else {
-        tokHtml = ` <span class="tok-pill-na">⏳ Pending</span>`;
-      }
-      return `<div style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:3px;"><span class="meal-pill pill-${t}">${mealEmoji(t)} ${t}${badge}</span>${tokHtml}</div>`;
-    }).join('');
-
-    // Date-level badge: show "Today", "Upcoming", or "Past"
-    const allPast = meals.every(t => isMealPast(d, t));
-    const allUp   = meals.every(t => !isMealPast(d, t));
-    const dateBadge = d === today
-      ? (allPast
-          ? ' <span style="color:var(--muted);font-size:.65rem;">(Today — done)</span>'
-          : ' <span style="color:var(--accent);font-size:.65rem;">(Today)</span>')
-      : d > today
-        ? ' <span style="color:var(--success);font-size:.65rem;">(Upcoming)</span>'
-        : ' <span style="color:var(--muted);font-size:.65rem;">(Past)</span>';
-
-    return `<div class="reg-row">
-      <div class="reg-date">${fmtDate(d)}${dateBadge}</div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${pillsHtml}</div>
-    </div>`;
-  }).join('');
+  renderReminders();
 }
 
-// ── Auto-login on load ───────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
-  const ok = tryAutoLogin();
-  if (!ok) {
-    const note = document.getElementById('autoCheckNote');
-    if (note) note.remove();
+async function enableReminders() {
+  if (pushMode === "unsupported") {
+    return toast("This browser can't show notifications. Try Chrome on Android.", true);
+  }
+  if (Notification.permission === "denied") {
+    return toast("Notifications are blocked. Turn them on in your browser's site settings.", true);
+  }
+  busy("remBtn", true, "Waiting for permission…");
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") {
+      pushMode = perm === "denied" ? "denied" : "off";
+      toast("Reminders stay off until you allow notifications.", true);
+      return;
+    }
+    const reg = await navigator.serviceWorker.register("sw.js");
+    await navigator.serviceWorker.ready;
+    const ok = await subscribePush(reg);
+    pushMode = ok ? "server" : "local";
+    if (!ok) scheduleLocal();
+    reg.showNotification("Reminders are on", {
+      body: "We'll ask at 7 AM. Answer Yes or No right from the notification.",
+      icon: "icon-192.png", badge: "icon-192.png", tag: "canteen-welcome"
+    });
+    toast(ok ? "Reminders on" : "Reminders on for this device");
+  } catch (e) {
+    toast("Couldn't turn on reminders. Try again.", true);
+  } finally {
+    busy("remBtn", false);
+    renderReminders();
+  }
+}
+
+async function subscribePush(reg) {
+  try {
+    const { key } = await api("/push/public-key");
+    if (!key) return false;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+    }
+    const j = sub.toJSON();
+    await api("/push/subscribe", {
+      emp_id: session.emp_id,
+      endpoint: sub.endpoint,
+      p256dh: j.keys.p256dh,
+      auth: j.keys.auth,
+      tz_offset_minutes: -new Date().getTimezoneOffset()
+    });
+    return true;
+  } catch (_) {
+    return false;   // no VAPID configured yet → device-only reminders
+  }
+}
+
+function b64ToBytes(base64) {
+  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+
+/* Device-only fallback: fire while the page is open */
+function clearLocalTimers() { localTimers.forEach(clearTimeout); localTimers = []; }
+function scheduleLocal() {
+  clearLocalTimers();
+  const now = istMinutes();
+  PROMPT_HOURS.forEach(h => {
+    const at = h * 60;
+    if (at <= now) return;
+    localTimers.push(setTimeout(() => {
+      const d = istDate(0);
+      if (answered[d]) return;                       // morning answer silences the rest
+      if (!TYPES.some(isOpen)) return;
+      if (document.visibilityState === "visible") { openSheet(); return; }
+      navigator.serviceWorker.ready.then(reg => reg.showNotification("Eating in today?", {
+        body: "Tap to book breakfast, lunch and dinner.",
+        icon: "icon-192.png", badge: "icon-192.png",
+        tag: "canteen-" + d, renotify: true, requireInteraction: true,
+        data: { emp_id: session.emp_id, date: d, meals: TYPES.filter(isOpen) },
+        actions: [{ action: "yes", title: "Yes" }, { action: "no", title: "No" }]
+      })).catch(() => {});
+    }, (at - now) * 60000));
+  });
+}
+
+function renderReminders() {
+  const btn = $("remBtn"), title = $("remTitle"), body = $("remBody"), icon = $("remIcon");
+  if (pushMode === "server") {
+    icon.textContent = "🔔"; title.textContent = "Reminders are on";
+    body.textContent = "We'll ask if you're eating in. Answer Yes or No straight from the notification — no need to open the app.";
+    btn.style.display = "none";
+  } else if (pushMode === "local") {
+    icon.textContent = "🔔"; title.textContent = "Reminders on this device";
+    body.textContent = "You'll be asked while the portal is open. Add Canteen to your home screen so reminders keep working in the background.";
+    btn.style.display = "none";
+  } else if (pushMode === "denied") {
+    icon.textContent = "🔕"; title.textContent = "Notifications are blocked";
+    body.textContent = "Open your browser's site settings for this page and allow notifications, then reload.";
+    btn.style.display = "none";
+  } else if (pushMode === "unsupported") {
+    icon.textContent = "🔕"; title.textContent = "Reminders aren't available here";
+    body.textContent = "Open the portal in Chrome on Android to get daily reminders.";
+    btn.style.display = "none";
+  } else {
+    icon.textContent = "🔔"; title.textContent = "Daily reminders";
+    body.textContent = "Get a notification asking if you're eating in. Answer Yes or No right from the notification.";
+    btn.style.display = "flex";
+  }
+  renderReminderTimes();
+}
+
+function renderReminderTimes() {
+  const d = istDate(0);
+  const done = !!answered[d];
+  const now = istMinutes();
+  $("remTimes").innerHTML = PROMPT_HOURS.map(h => {
+    const label = (h % 12 || 12) + " " + (h < 12 ? "AM" : "PM");
+    let cls = "chip";
+    if (done) cls += " done";
+    else if (h * 60 > now) cls += " live";
+    else cls += " done";
+    return '<span class="' + cls + '">' + label + "</span>";
+  }).join("") +
+  (done ? '<span class="chip live">Answered — no more asks today</span>' : "");
+}
+
+/* Service worker tells us the employee answered from a notification */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", e => {
+    if (e.data && e.data.type === "meals-updated") {
+      if (e.data.date) markAnswered(e.data.date);
+      refresh();
+    }
+  });
+}
+
+/* Refresh when the app comes back to the foreground */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && session) {
+    loadTimelines().then(refresh).then(maybePrompt);
   }
 });
+
+/* ── Boot ───────────────────────────────────────────── */
+(async function boot() {
+  go("scWelcome");
+  const s = loadSession();
+  if (s) {
+    $("bootNote").textContent = "Signing you in…";
+    await start(s.emp_id, s.name);
+  } else {
+    $("bootNote").textContent = "";
+  }
+})();
 </script>
 </body>
 </html>

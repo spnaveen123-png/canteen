@@ -5,3 +5,5 @@ pydantic
 passlib
 bcrypt==4.0.1
 pytz
+pywebpush
+APScheduler
