@@ -1,7 +1,7 @@
 {
   "name": "Canteen — Meal Registration",
   "short_name": "Canteen",
-  "description": "Book your canteen meal in one tap.",
+  "description": "Cook to the count. Book your canteen meal in one tap.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

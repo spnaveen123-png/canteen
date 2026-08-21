@@ -33,6 +33,16 @@ VAPID_SUBJECT     = os.getenv("VAPID_SUBJECT", "mailto:canteen@example.com")
 REMINDER_SECRET   = os.getenv("REMINDER_SECRET", "")
 ENABLE_SCHEDULER  = os.getenv("ENABLE_SCHEDULER", "1") == "1"
 
+# Keep-alive. Render's free tier sleeps a service after ~15 minutes with no
+# inbound request, and the cold start that follows takes close to a minute.
+# A request the service makes to itself still counts as inbound traffic, so a
+# short self-ping keeps it warm. Confined to a daily window because free
+# instance-hours are capped — see SETUP.md.
+KEEPALIVE_URL     = os.getenv("KEEPALIVE_URL", "").rstrip("/")
+KEEPALIVE_MINUTES = int(os.getenv("KEEPALIVE_MINUTES", "12"))
+KEEPALIVE_FROM    = int(os.getenv("KEEPALIVE_FROM_HOUR", "6"))    # IST, inclusive
+KEEPALIVE_TO      = int(os.getenv("KEEPALIVE_TO_HOUR", "22"))     # IST, exclusive
+
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
     raise RuntimeError(
         "Missing environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Render."
@@ -135,6 +145,7 @@ async def check_meal_cutoff(meal_type: str, target_date: date):
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 scheduler = None
+keepalive_scheduler = None
 
 
 @asynccontextmanager
@@ -156,9 +167,31 @@ async def lifespan(app: FastAPI):
             log.info("Reminder scheduler started for %s IST", REMINDER_HOURS)
         except Exception as e:
             log.warning("Scheduler not started: %s", e)
+
+    if KEEPALIVE_URL:
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            from apscheduler.triggers.interval import IntervalTrigger
+            global keepalive_scheduler
+            keepalive_scheduler = BackgroundScheduler(timezone=IST)
+            keepalive_scheduler.add_job(
+                self_ping,
+                IntervalTrigger(minutes=max(5, KEEPALIVE_MINUTES), timezone=IST),
+                id="keepalive",
+                replace_existing=True,
+            )
+            keepalive_scheduler.start()
+            log.info("Keep-alive every %s min, %02d:00-%02d:00 IST",
+                     KEEPALIVE_MINUTES, KEEPALIVE_FROM, KEEPALIVE_TO)
+        except Exception as e:
+            log.warning("Scheduler not started: %s", e)
     yield
-    if scheduler:
-        scheduler.shutdown(wait=False)
+    for sch in (scheduler, keepalive_scheduler):
+        if sch:
+            try:
+                sch.shutdown(wait=False)
+            except Exception:
+                pass
 
 
 app = FastAPI(title="Canteen Portal API", lifespan=lifespan)
@@ -220,6 +253,35 @@ class ResubscribeRequest(BaseModel):
     auth: str
 
 
+# ─── Keep-alive ───────────────────────────────────────────────────────────────
+def self_ping():
+    """
+    Hit our own /ping so Render sees inbound traffic and doesn't spin the
+    service down. Silent outside the configured window so we don't burn free
+    instance-hours overnight when nobody is booking meals.
+    """
+    now = get_ist_now()
+    if not (KEEPALIVE_FROM <= now.hour < KEEPALIVE_TO):
+        return
+    try:
+        import urllib.request
+        req = urllib.request.Request(KEEPALIVE_URL + "/ping",
+                                     headers={"User-Agent": "canteen-keepalive"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            r.read(64)
+    except Exception as e:
+        log.warning("Keep-alive ping failed: %s", e)
+
+
+@app.get("/ping")
+async def ping():
+    """
+    Deliberately does nothing — no database call, no auth. Point uptime
+    monitors here rather than /health so a warm-up never touches Supabase.
+    """
+    return {"ok": True, "ist": get_ist_now().strftime("%Y-%m-%d %H:%M:%S")}
+
+
 # ─── Health ───────────────────────────────────────────────────────────────────
 @app.get("/health")
 @app.get("/api/health")
@@ -230,6 +292,7 @@ async def health_check():
             "status": "healthy",
             "database": "connected",
             "push": bool(VAPID_PRIVATE_KEY),
+            "keepalive": bool(KEEPALIVE_URL),
             "timestamp": get_ist_now().isoformat(),
         }
     except Exception as e:
