@@ -1,12 +1,19 @@
 /* ═══════════════════════════════════════════════════════
    Canteen Portal — service worker
-   Shows the daily reminder and lets the employee answer
-   Yes or No without opening the app.
+
+   A service worker has no `window`, so it can't read env.js.
+   The page registers it as  sw.js?api=<backend url>  and we read
+   the address back off our own script URL. Nothing is hardcoded.
    ═══════════════════════════════════════════════════════ */
 
-const API   = "https://canteen-portal-api.onrender.com";
-const CACHE = "canteen-v2";
-const SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
+const API = (() => {
+  try {
+    return (new URL(self.location.href).searchParams.get("api") || "").replace(/\/+$/, "");
+  } catch (_) { return ""; }
+})();
+
+const CACHE = "canteen-v3";
+const SHELL = ["./", "./index.html", "./env.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", event => {
   self.skipWaiting();
@@ -21,13 +28,14 @@ self.addEventListener("activate", event => {
   );
 });
 
-/* Network first so meal status is always live; cache is the offline safety net.
-   API calls are never cached. */
+/* Network first so meal status is always live; cache is the offline net.
+   API calls and env.js are never served from cache. */
 self.addEventListener("fetch", event => {
   const req = event.request;
   if (req.method !== "GET") return;
-  if (req.url.indexOf(API) === 0) return;
+  if (API && req.url.indexOf(API) === 0) return;
   if (new URL(req.url).origin !== self.location.origin) return;
+  if (req.url.indexOf("env.js") !== -1) return;
 
   event.respondWith(
     fetch(req)
@@ -47,35 +55,35 @@ self.addEventListener("push", event => {
   let d = {};
   try { d = event.data ? event.data.json() : {}; } catch (_) {}
 
+  // The server names one meal — whichever this employee usually books.
+  const bookLabel = d.action_label || (d.meals && d.meals.length ? "Book " + cap(d.meals[0]) : null);
+  const actions = bookLabel
+    ? [{ action: "yes", title: bookLabel }, { action: "no", title: "Not today" }]
+    : [{ action: "no", title: "Not today" }];
+
   event.waitUntil(
     self.registration.showNotification(d.title || "Eating in today?", {
-      body: d.body || "Tap Yes to book breakfast, lunch and dinner.",
+      body: d.body || "Tap to book your meal.",
       icon: "./icon-192.png",
       badge: "./icon-192.png",
-      tag: "canteen-" + (d.date || "prompt"),   // a later reminder replaces the earlier one
+      tag: "canteen-" + (d.date || "prompt"),   // a later round replaces the earlier one
       renotify: true,
-      requireInteraction: true,                 // stays put until answered
+      requireInteraction: true,
       vibrate: [80, 40, 80],
-      data: {
-        emp_id: d.emp_id || null,
-        date:   d.date   || null,
-        meals:  d.meals  || []
-      },
-      actions: [
-        { action: "yes", title: "Yes" },
-        { action: "no",  title: "No"  }
-      ]
+      data: { emp_id: d.emp_id || null, date: d.date || null, meals: d.meals || [] },
+      actions: actions
     })
   );
 });
 
-/* ── Yes / No tapped ────────────────────────────────── */
+/* ── Book / Not today tapped ────────────────────────── */
 self.addEventListener("notificationclick", event => {
   const action = event.action;
   const d = event.notification.data || {};
   event.notification.close();
 
-  if (action !== "yes" && action !== "no") {
+  // Body tap, or no API configured — just open the portal.
+  if ((action !== "yes" && action !== "no") || !API) {
     event.waitUntil(openApp());
     return;
   }
@@ -91,11 +99,11 @@ self.addEventListener("notificationclick", event => {
       .then(res => {
         if (!res.ok) throw new Error("save failed");
         return self.registration.showNotification(
-          action === "yes" ? "Meals booked" : "Saved — no meals",
+          action === "yes" ? cap(meals[0] || "Meal") + " booked" : "Saved — not eating in",
           {
             body: action === "yes"
-              ? "You're on the list. Open Canteen to change any meal."
-              : "You won't be counted for today.",
+              ? "You're on the list. Open Canteen to add another meal."
+              : "You won't be counted today.",
             icon: "./icon-192.png",
             badge: "./icon-192.png",
             tag: "canteen-done-" + (d.date || ""),
@@ -116,6 +124,8 @@ self.addEventListener("notificationclick", event => {
 });
 
 /* ── Helpers ────────────────────────────────────────── */
+function cap(s) { return String(s).charAt(0).toUpperCase() + String(s).slice(1); }
+
 function openApp() {
   return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
     for (const c of list) {
@@ -133,6 +143,7 @@ function tellPages(date) {
 
 /* Chrome rotates push subscriptions occasionally — re-register */
 self.addEventListener("pushsubscriptionchange", event => {
+  if (!API) return;
   event.waitUntil(
     fetch(API + "/push/public-key")
       .then(r => r.json())

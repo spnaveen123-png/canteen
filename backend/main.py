@@ -45,8 +45,12 @@ log = logging.getLogger("canteen")
 logging.basicConfig(level=logging.INFO)
 
 IST = pytz.timezone("Asia/Kolkata")
-MEAL_TYPES = ["breakfast", "lunch", "dinner"]
+# Fallback only. The real list is read from meal_timelines, so adding a row
+# there (e.g. 'snacks') makes it appear everywhere with no code change.
+DEFAULT_MEAL_TYPES = ["breakfast", "lunch", "dinner"]
 REMINDER_HOURS = [7, 12, 20]          # IST — matches the chips shown in the portal
+
+_meal_cache = {"at": None, "cutoffs": {}}
 
 
 def get_ist_now():
@@ -60,17 +64,56 @@ def parse_time(val) -> time:
     return datetime.strptime(str(val), "%H:%M:%S").time()
 
 
-def fetch_cutoffs() -> dict:
-    """{ meal_type: time } straight from meal_timelines."""
-    res = supabase.table("meal_timelines").select("meal_type, end_time").execute()
-    return {r["meal_type"]: parse_time(r["end_time"]) for r in (res.data or [])}
+def fetch_cutoffs(force: bool = False) -> dict:
+    """{ meal_type: time } straight from meal_timelines, cached for a minute."""
+    now = get_ist_now()
+    if not force and _meal_cache["at"] and (now - _meal_cache["at"]).total_seconds() < 60:
+        return _meal_cache["cutoffs"]
+    try:
+        res = supabase.table("meal_timelines").select("meal_type, end_time").order("end_time").execute()
+        cutoffs = {r["meal_type"]: parse_time(r["end_time"]) for r in (res.data or [])}
+        if cutoffs:
+            _meal_cache["at"] = now
+            _meal_cache["cutoffs"] = cutoffs
+            return cutoffs
+    except Exception as e:
+        log.warning("Could not read meal_timelines: %s", e)
+    return _meal_cache["cutoffs"] or {}
+
+
+def meal_types() -> List[str]:
+    """Every meal the canteen serves, earliest cutoff first."""
+    cutoffs = fetch_cutoffs()
+    if not cutoffs:
+        return list(DEFAULT_MEAL_TYPES)
+    return sorted(cutoffs, key=lambda m: cutoffs[m])
 
 
 def open_meals_now() -> List[str]:
     """Meal types whose cutoff hasn't passed yet today."""
     now_t = get_ist_now().time()
     cutoffs = fetch_cutoffs()
-    return [m for m in MEAL_TYPES if m in cutoffs and now_t <= cutoffs[m]]
+    return [m for m in meal_types() if m in cutoffs and now_t <= cutoffs[m]]
+
+
+def usual_meal(emp_id: str, days: int = 45) -> Optional[str]:
+    """
+    The meal this employee books most often. Most people book exactly one meal
+    a day, so the reminder can offer that one directly instead of asking them
+    to open the app and choose.
+    """
+    since = get_ist_now().date() - timedelta(days=days)
+    try:
+        res = supabase.table("meal_registrations").select("meal_type") \
+            .eq("emp_id", emp_id).gte("meal_date", str(since)).execute()
+    except Exception:
+        return None
+    counts = {}
+    for r in (res.data or []):
+        counts[r["meal_type"]] = counts.get(r["meal_type"], 0) + 1
+    if not counts:
+        return None
+    return max(counts, key=counts.get)
 
 
 async def check_meal_cutoff(meal_type: str, target_date: date):
@@ -291,14 +334,15 @@ async def respond(req: RespondRequest):
     the list is removed. Meals whose cutoff has already passed are left alone.
     """
     d_obj = date.fromisoformat(req.meal_date)
-    wanted = {m for m in req.meals if m in MEAL_TYPES}
+    all_types = meal_types()
+    wanted = {m for m in req.meals if m in all_types}
 
     existing_res = supabase.table("meal_registrations").select("meal_type") \
         .eq("emp_id", req.emp_id).eq("meal_date", str(d_obj)).execute()
     existing = {r["meal_type"] for r in (existing_res.data or [])}
 
     changed, skipped = [], []
-    for m in MEAL_TYPES:
+    for m in all_types:
         allowed, _ = await check_meal_cutoff(m, d_obj)
         if not allowed:
             if (m in wanted) != (m in existing):
@@ -417,6 +461,12 @@ async def get_all_meals_with_tokens(emp_id: str):
     return {"registrations": result}
 
 
+@app.get("/employee/{emp_id}/usual-meal")
+async def get_usual_meal(emp_id: str):
+    """The meal this employee books most often — used to label the reminder."""
+    return {"meal_type": usual_meal(emp_id)}
+
+
 # ═══ Push notifications ═══════════════════════════════════════════════════════
 @app.get("/push/public-key")
 async def push_public_key():
@@ -504,22 +554,39 @@ def send_daily_reminders():
 
     sent, dropped = 0, 0
     hour = get_ist_now().hour
-    if hour < 11:
-        title, body = "Eating in today?", "Tap Yes to book breakfast, lunch and dinner."
-    elif hour < 17:
-        title, body = "Lunch and dinner today?", "You haven't answered yet — tap Yes to book."
-    else:
-        title, body = "Last call for dinner", "Tap Yes if you're eating in tonight."
+    title = ("Eating in today?" if hour < 11
+             else "Still eating in today?" if hour < 17
+             else "Last call for today")
+
+    # One lookup per employee, not per device.
+    usual_by_emp = {}
 
     for s in (subs_res.data or []):
-        if s["emp_id"] in answered:
+        emp = s["emp_id"]
+        if emp in answered:
             continue
+
+        if emp not in usual_by_emp:
+            u = usual_meal(emp)
+            usual_by_emp[emp] = u if (u in meals) else None
+        pick = usual_by_emp[emp]
+
+        if pick:
+            body = f"Tap to book {pick} — or Not today if you're out."
+            action_label = f"Book {pick.capitalize()}"
+            offer = [pick]
+        else:
+            body = "Open Canteen to book your meal."
+            action_label = None
+            offer = []
+
         payload = json.dumps({
             "title": title,
             "body": body,
-            "emp_id": s["emp_id"],
+            "emp_id": emp,
             "date": str(today),
-            "meals": meals,
+            "meals": offer,
+            "action_label": action_label,
         })
         try:
             webpush(
@@ -539,9 +606,9 @@ def send_daily_reminders():
                 supabase.table("push_subscriptions").delete().eq("endpoint", s["endpoint"]).execute()
                 dropped += 1
             else:
-                log.warning("Push failed for %s: %s", s["emp_id"], e)
+                log.warning("Push failed for %s: %s", emp, e)
         except Exception as e:
-            log.warning("Push error for %s: %s", s["emp_id"], e)
+            log.warning("Push error for %s: %s", emp, e)
 
     log.info("Reminders sent=%s dropped=%s meals=%s", sent, dropped, meals)
     return {"sent": sent, "dropped": dropped, "meals": meals, "date": str(today)}

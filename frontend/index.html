@@ -7,7 +7,11 @@
 <meta name="theme-color" content="#101412" media="(prefers-color-scheme: dark)" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+<!-- Manual fallback for the API address. build.sh normally writes env.js instead;
+     fill this in only if you're uploading files by hand with no build step. -->
+<meta name="api-url" content="" />
+
 <title>Canteen</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="apple-touch-icon" href="icon-192.png" />
@@ -40,8 +44,7 @@ body{
   background:var(--paper); color:var(--ink);
   font-family:'Inter Tight',system-ui,-apple-system,sans-serif;
   font-size:15px; line-height:1.45; min-height:100dvh;
-  -webkit-tap-highlight-color:transparent;
-  -webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:transparent; -webkit-font-smoothing:antialiased;
 }
 .display{font-family:'Bricolage Grotesque','Inter Tight',system-ui,sans-serif;font-weight:700;letter-spacing:-.03em;line-height:1.08}
 button,input{font:inherit;color:inherit}
@@ -56,8 +59,9 @@ header{
   backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
   border-bottom:1px solid var(--line);
 }
-.mark{width:26px;height:26px;border-radius:8px;background:var(--ink);color:var(--paper);
-  display:grid;place-items:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:.82rem;flex-shrink:0}
+.mark{width:28px;height:28px;border-radius:9px;background:var(--leaf);color:var(--paper);
+  display:grid;place-items:center;flex-shrink:0}
+.mark svg{width:19px;height:19px}
 .wordmark{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:.95rem;letter-spacing:-.02em}
 .who{margin-left:auto;display:none;align-items:center;gap:6px;background:none;border:1px solid var(--line);
   border-radius:99px;padding:.3rem .7rem;font-size:.76rem;color:var(--ink2);cursor:pointer}
@@ -68,7 +72,6 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .screen.active{display:flex}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
 .pad{padding:1.1rem}
-
 .eyebrow{font-size:.7rem;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--ink2)}
 
 /* ── Buttons ───────────────────────────────────────── */
@@ -78,7 +81,6 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .btn:active{transform:scale(.985)}
 .btn:disabled{opacity:.5;cursor:default}
 .btn-primary{background:var(--ink);color:var(--paper)}
-.btn-yes{background:var(--leaf);color:var(--on-leaf)}
 .btn-line{background:var(--card);border-color:var(--line);color:var(--ink)}
 .btn-quiet{background:none;color:var(--ink2);min-height:42px;font-size:.86rem;font-weight:500}
 .btn-sm{min-height:40px;font-size:.83rem;padding:.5rem .9rem;width:auto}
@@ -98,6 +100,14 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .alert-err{background:var(--chili-soft);color:var(--chili)}
 .alert-ok{background:var(--leaf-soft);color:var(--leaf)}
 
+/* ── Setup banner ──────────────────────────────────── */
+.setup{display:none;background:var(--chili-soft);color:var(--chili);border-radius:12px;padding:.9rem 1rem;
+  font-size:.83rem;line-height:1.5}
+.setup.show{display:block}
+.setup b{display:block;font-size:.9rem;margin-bottom:.25rem}
+.setup code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82em;
+  background:color-mix(in srgb,var(--chili) 14%,transparent);padding:.05rem .3rem;border-radius:4px}
+
 /* ── Day switch ────────────────────────────────────── */
 .dayswitch{display:flex;gap:4px;background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:4px}
 .dayswitch button{flex:1;background:none;border:none;border-radius:9px;padding:.6rem .4rem;cursor:pointer;
@@ -105,11 +115,10 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .dayswitch button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1)}
 .dayswitch button span{display:block;font-size:.68rem;font-weight:500;color:var(--ink2);margin-top:1px}
 
-/* ── Status headline ───────────────────────────────── */
+/* ── Status ────────────────────────────────────────── */
 .status{padding:1.3rem 1.15rem 1.2rem}
 .status h2{font-size:1.72rem;margin:.5rem 0 .35rem}
 .status .sub{font-size:.85rem;color:var(--ink2)}
-.status .sub b{color:var(--ink);font-weight:600}
 
 /* ── Meal rows: the coupon stub ────────────────────── */
 .meals{display:flex;flex-direction:column;gap:8px;margin-top:1rem}
@@ -118,9 +127,9 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
   padding:.85rem .95rem .85rem 1rem;min-height:68px;cursor:pointer;overflow:hidden;
   transition:border-color .18s, background .18s, transform .12s}
 .meal:active{transform:scale(.99)}
-.meal .tile{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;
-  background:var(--sunk);color:var(--ink2);font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:.9rem;
-  transition:background .18s,color .18s}
+.meal .tile{width:36px;height:36px;border-radius:10px;flex-shrink:0;display:grid;place-items:center;
+  background:var(--sunk);color:var(--ink2);transition:background .18s,color .18s}
+.meal .tile svg{width:21px;height:21px}
 .meal .name{display:block;font-weight:600;font-size:.98rem}
 .meal .meta{display:block;font-size:.76rem;color:var(--ink2);margin-top:1px}
 .meal .box{margin-left:auto;width:26px;height:26px;border-radius:8px;border:2px solid var(--line);flex-shrink:0;
@@ -128,15 +137,13 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .meal .box svg{width:14px;height:14px;stroke:var(--on-leaf);stroke-width:3.2;fill:none;
   stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.6);transition:opacity .18s,transform .18s}
 
-/* registered state — perforated coupon edge appears */
 .meal.on{border-color:color-mix(in srgb, var(--leaf) 45%, var(--line));background:color-mix(in srgb, var(--leaf-soft) 55%, var(--card))}
 .meal.on .tile{background:var(--leaf);color:var(--on-leaf)}
 .meal.on .box{background:var(--leaf);border-color:var(--leaf)}
 .meal.on .box svg{opacity:1;transform:scale(1)}
-.meal.on::before{
-  content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
-  background:radial-gradient(circle at 0 4px, transparent 0 3.5px, var(--leaf) 3.5px) 0 0/5px 11px repeat-y;
-}
+.meal.on::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
+  background:radial-gradient(circle at 0 4px, transparent 0 3.5px, var(--leaf) 3.5px) 0 0/5px 11px repeat-y}
+
 .meal.collected{border-color:color-mix(in srgb, var(--turmeric) 45%, var(--line))}
 .meal.collected .tile{background:var(--turmeric);color:#fff}
 .meal.collected .box{background:var(--turmeric);border-color:var(--turmeric)}
@@ -147,15 +154,15 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .meal.busy{opacity:.6;pointer-events:none}
 .meal .token{display:inline-flex;align-items:center;gap:.3rem;font-size:.72rem;font-weight:600;
   color:var(--turmeric);background:var(--turmeric-soft);padding:.12rem .45rem;border-radius:5px;margin-top:3px}
-
-/* ── Quick answer ──────────────────────────────────── */
-.quick{display:flex;gap:8px;margin-top:1rem}
-.quick .btn{flex:1}
+.usual{display:inline-block;font-size:.63rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--turmeric);background:var(--turmeric-soft);padding:.1rem .34rem;border-radius:4px;
+  margin-left:.4rem;vertical-align:2px}
 
 /* ── Reminder card ─────────────────────────────────── */
 .rem{display:flex;align-items:flex-start;gap:.8rem}
 .rem .bell{width:36px;height:36px;border-radius:10px;background:var(--turmeric-soft);color:var(--turmeric);
-  display:grid;place-items:center;flex-shrink:0;font-size:1.05rem}
+  display:grid;place-items:center;flex-shrink:0}
+.rem .bell svg{width:19px;height:19px}
 .rem h3{font-size:.94rem;font-weight:600}
 .rem p{font-size:.8rem;color:var(--ink2);margin-top:2px}
 .times{display:flex;gap:6px;margin-top:.8rem;flex-wrap:wrap}
@@ -164,11 +171,11 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .chip.live{background:var(--leaf-soft);color:var(--leaf);border-color:transparent}
 .chip.done{text-decoration:line-through;opacity:.55}
 
-/* ── Bottom sheet prompt ───────────────────────────── */
+/* ── Bottom sheet ──────────────────────────────────── */
 .scrim{position:fixed;inset:0;z-index:80;background:rgba(15,20,17,.45);backdrop-filter:blur(3px);
-  display:none;align-items:flex-end;justify-content:center;padding:0}
+  display:none;align-items:flex-end;justify-content:center}
 .scrim.show{display:flex;animation:fade .2s ease}
-.sheet{width:100%;max-width:440px;background:var(--card);border-radius:20px 20px 0 0;
+.sheet{width:100%;max-width:440px;max-height:88dvh;overflow-y:auto;background:var(--card);border-radius:20px 20px 0 0;
   padding:1.4rem 1.15rem calc(1.4rem + env(safe-area-inset-bottom));animation:rise .28s cubic-bezier(.2,.8,.2,1)}
 .grip{width:36px;height:4px;border-radius:99px;background:var(--line);margin:0 auto 1.1rem}
 .sheet h2{font-size:1.5rem;margin-bottom:.4rem}
@@ -195,18 +202,20 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 <body>
 
 <header>
-  <div class="mark">C</div>
+  <div class="mark" id="brandMark"></div>
   <div class="wordmark">Canteen</div>
   <button class="who" id="who" onclick="signOut()"><span class="dot"></span><span id="whoName"></span></button>
 </header>
 
 <main>
 
+  <div class="setup" id="setupBanner"></div>
+
   <!-- ═══ Welcome ═══ -->
   <section class="screen" id="scWelcome">
     <div class="hero">
       <h1 class="display">Are you<br>eating in?</h1>
-      <p>Answer once each morning. Your name goes on the list for breakfast, lunch and dinner.</p>
+      <p>Book the meals you want, one tap each. Today and tomorrow only.</p>
     </div>
     <div style="display:flex;flex-direction:column;gap:9px">
       <button class="btn btn-primary" onclick="go('scLogin')">Sign in</button>
@@ -220,7 +229,7 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
     <div class="hero" style="padding-top:1.6rem"><h1 class="display" style="font-size:1.9rem">Sign in</h1></div>
     <div class="card pad" style="display:flex;flex-direction:column;gap:.9rem">
       <div class="field"><label for="lgId">Employee ID</label>
-        <input id="lgId" type="text" autocomplete="username" placeholder="EMP001" /></div>
+        <input id="lgId" type="text" inputmode="numeric" autocomplete="username" placeholder="e.g. 4424" /></div>
       <div class="field"><label for="lgPw">Password</label>
         <input id="lgPw" type="password" autocomplete="current-password" placeholder="Your password"
                onkeydown="if(event.key==='Enter')doLogin()" /></div>
@@ -238,7 +247,8 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
       <p style="font-size:.88rem">Confirm your date of birth to create a password.</p>
     </div>
     <div class="card pad" style="display:flex;flex-direction:column;gap:.9rem">
-      <div class="field"><label for="flId">Employee ID</label><input id="flId" type="text" placeholder="EMP001" /></div>
+      <div class="field"><label for="flId">Employee ID</label>
+        <input id="flId" type="text" inputmode="numeric" placeholder="e.g. 4424" /></div>
       <div class="field"><label for="flDob">Date of birth</label><input id="flDob" type="date" /></div>
       <div class="alert" id="flAlert"></div>
       <button class="btn btn-primary" id="flBtn" onclick="doFirstLogin()">Continue</button>
@@ -273,22 +283,19 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
         <div class="eyebrow" id="stEyebrow">Today</div>
         <h2 class="display" id="stLine">Loading…</h2>
         <div class="sub" id="stSub"></div>
-
         <div class="meals" id="meals"></div>
-
-        <div class="quick" id="quick">
-          <button class="btn btn-yes btn-sm" onclick="answerAll(true)">Yes to all</button>
-          <button class="btn btn-line btn-sm" onclick="answerAll(false)">No meals</button>
+        <div id="declineWrap" style="margin-top:.9rem;display:none">
+          <button class="btn btn-quiet" id="declineBtn" onclick="declineDay()">Not eating in today</button>
         </div>
       </div>
     </div>
 
     <div class="card pad" id="remCard">
       <div class="rem">
-        <div class="bell" id="remIcon">🔔</div>
+        <div class="bell" id="remIcon"></div>
         <div style="flex:1">
           <h3 id="remTitle">Daily reminders</h3>
-          <p id="remBody">Get a notification asking if you're eating in. Answer Yes or No right from the notification.</p>
+          <p id="remBody">Get a notification asking if you're eating in. Book your usual meal straight from the notification.</p>
           <div class="times" id="remTimes"></div>
         </div>
       </div>
@@ -303,55 +310,84 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 
 </main>
 
-<!-- ═══ Daily prompt sheet ═══ -->
+<!-- ═══ Daily prompt ═══ -->
 <div class="scrim" id="scrim" onclick="if(event.target===this)closeSheet()">
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
     <div class="grip"></div>
     <h2 class="display" id="shTitle">Eating in today?</h2>
-    <p id="shSub">Tell the kitchen once and you're set for " + dayName(d, { weekday: "long" }) + ".</p>
-    <div style="display:flex;flex-direction:column;gap:9px">
-      <button class="btn btn-yes" onclick="sheetAnswer(true)">Yes — book all meals</button>
-      <button class="btn btn-line" onclick="sheetAnswer(false)">No meals today</button>
-      <button class="btn btn-quiet" onclick="closeSheet()">I'll pick each meal</button>
-    </div>
+    <p id="shSub">Tap the meal you want.</p>
+    <div class="meals" id="sheetMeals" style="margin-top:0"></div>
+    <button class="btn btn-quiet" style="margin-top:.9rem" onclick="declineDay()">Not eating in today</button>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<!-- Vite Environment Injection -->
-<script type="module">
-  window.__APP_ENV__ = {
-    API_URL: import.meta.env?.VITE_API_URL || ""
-  };
-</script>
+<!-- Written by build.sh from the VITE_API_URL environment variable.
+     Must load before the app script below. -->
+<script src="env.js"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════
    Canteen Portal
-   Today + tomorrow only. One tap per meal. No history.
+   Today + tomorrow. One tap per meal. No history.
    ═══════════════════════════════════════════════════════ */
 
-const API = (window.__APP_ENV__?.API_URL || "").replace(/\/+$/, "");
+/* ── Where is the API? ──────────────────────────────────
+   1. env.js   → window.__APP_ENV__.API_URL  (written from VITE_API_URL at build time)
+   2. <meta name="api-url">                  (manual fallback, no build step)
+   Nothing hardcoded here — an empty value shows a setup banner instead of
+   firing requests at this site's own origin.                              */
+function resolveApi() {
+  const env = window.__APP_ENV__ || {};
+  const meta = document.querySelector('meta[name="api-url"]');
+  let v = String(env.API_URL || env.VITE_API_URL || (meta && meta.content) || "").trim();
+  if (!v || v === "undefined" || v === "null" || v.indexOf("%") === 0) return "";
+  return v.replace(/\/+$/, "");
+}
+const API = resolveApi();
 
-const TYPES = ["breakfast", "lunch", "dinner"];
-const LABEL = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner" };
-const INITIAL = { breakfast: "B", lunch: "L", dinner: "D" };
-const FALLBACK_CUTOFF = { breakfast: 9 * 60, lunch: 15 * 60, dinner: 20 * 60 + 30 };
+/* Meal types come from the meal_timelines table, so adding 'snacks' there
+   makes it appear here with no code change. These are only the fallback
+   used when the API can't be reached. */
+let TYPES = ["breakfast", "lunch", "dinner"];
+const FALLBACK_CUTOFF = { breakfast: 9 * 60, lunch: 15 * 60, snacks: 17 * 60 + 30, dinner: 20 * 60 + 30 };
 const PROMPT_HOURS = [7, 12, 20];
 
-let session = null;        // { emp_id, name }
-let dayIdx = 0;            // 0 = today, 1 = tomorrow
-let timelines = {};        // { breakfast: { end_time, open_today } }
-let regs = {};             // { "YYYY-MM-DD": Set<type> }
-let tokens = {};           // { "YYYY-MM-DD": { lunch: {token_number, issued_at} } }
-let answered = {};         // { "YYYY-MM-DD": true }  local record of a Yes/No answer
-let pushMode = "off";      // off | server | local | denied | unsupported
+const ICONS = {
+  /* chai glass and steam */
+  breakfast: '<path d="M4.5 9h12v4.5a5.5 5.5 0 0 1-5.5 5.5H10a5.5 5.5 0 0 1-5.5-5.5V9Z"/><path d="M16.5 10.2h1.6a2.6 2.6 0 0 1 0 5.2h-1.6"/><path d="M8.5 3v2.2M12.5 2.4v2.8"/>',
+  /* thali: plate with three katoris */
+  lunch: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="7.7" r="2"/><circle cx="8.3" cy="14.4" r="2"/><circle cx="15.7" cy="14.4" r="2"/>',
+  /* samosa */
+  snacks: '<path d="M11.05 4.7 3.4 17.9A1.55 1.55 0 0 0 4.75 20.2h14.5a1.55 1.55 0 0 0 1.35-2.3L12.95 4.7a1.1 1.1 0 0 0-1.9 0Z"/><path d="M6.6 15.2c3.4 1.5 7.4 1.5 10.8 0"/>',
+  /* covered plate */
+  dinner: '<path d="M2.8 18.5h18.4"/><path d="M4.4 18.5a7.6 7.6 0 0 1 15.2 0"/><path d="M12 7.4V5.9"/><circle cx="12" cy="4.6" r="1.15"/>',
+  /* generic bowl */
+  _default: '<path d="M3.2 10.5h17.6a8.8 8.8 0 0 1-17.6 0Z"/><path d="M2 20h20"/><path d="M9.5 7.4c-.9-1 .9-2 0-3M14.5 7.4c-.9-1 .9-2 0-3"/>'
+};
+function icon(type) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+    'stroke-linecap="round" stroke-linejoin="round">' + (ICONS[type] || ICONS._default) + "</svg>";
+}
+const BELL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8.8a6 6 0 1 0-12 0c0 6-2.2 7.6-2.2 7.6h16.4S18 14.8 18 8.8Z"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>';
+const BELL_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8.8a6 6 0 0 0-9.3-5"/><path d="M6.1 6.2A6 6 0 0 0 6 8.8c0 6-2.2 7.6-2.2 7.6h12.6"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/><path d="M3 3l18 18"/></svg>';
+
+let session = null;
+let dayIdx = 0;
+let timelines = {};
+let regs = {};
+let tokens = {};
+let answered = {};
+let usualMeal = null;
+let pushMode = "off";
 let firstLoginId = null;
 let localTimers = [];
 
-/* ── Small helpers ──────────────────────────────────── */
+/* ── Helpers ────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
+
+function label(t) { return t.charAt(0).toUpperCase() + t.slice(1); }
 
 function go(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
@@ -375,28 +411,27 @@ function alertBox(id, msg, kind) {
   el._t = setTimeout(() => el.classList.remove("show"), 6000);
 }
 
-function busy(btnId, on, label) {
+function busy(btnId, on, text) {
   const b = $(btnId);
   if (!b) return;
-  if (on) { b._label = b.textContent; b.textContent = label || "Working…"; b.disabled = true; }
+  if (on) { b._label = b.textContent; b.textContent = text || "Working…"; b.disabled = true; }
   else { b.textContent = b._label || b.textContent; b.disabled = false; }
 }
 
 async function api(path, body, method) {
+  if (!API) throw new Error("The portal isn't pointed at the API yet.");
   const opts = body
     ? { method: method || "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     : { method: method || "GET" };
   const res = await fetch(API + path, opts);
   let data = {};
   try { data = await res.json(); } catch (_) {}
-  if (!res.ok) throw new Error(data.detail || "Something went wrong. Try again.");
+  if (!res.ok) throw new Error(data.detail || ("Request failed (" + res.status + ")"));
   return data;
 }
 
-/* ── IST date maths (works on any device timezone) ──── */
 function istDate(offsetDays) {
-  const ms = Date.now() + 5.5 * 3600000 + (offsetDays || 0) * 86400000;
-  return new Date(ms).toISOString().slice(0, 10);
+  return new Date(Date.now() + 5.5 * 3600000 + (offsetDays || 0) * 86400000).toISOString().slice(0, 10);
 }
 function istMinutes() {
   const d = new Date(Date.now() + 5.5 * 3600000);
@@ -408,13 +443,22 @@ function dayName(dstr, opts) {
 }
 function activeDate() { return istDate(dayIdx); }
 
+/* "3:00 PM" → minutes since midnight, for ordering meals */
+function parseClock(s) {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(String(s).trim());
+  if (!m) return 9999;
+  let h = +m[1] % 12;
+  if (m[3] && m[3].toUpperCase() === "PM") h += 12;
+  if (!m[3]) h = +m[1];
+  return h * 60 + +m[2];
+}
+
 /* ── Session ────────────────────────────────────────── */
 function saveSession(s) { try { localStorage.setItem("canteen_s", JSON.stringify({ ...s, ts: Date.now() })); } catch (_) {} }
 function loadSession() {
   try {
     const s = JSON.parse(localStorage.getItem("canteen_s") || "null");
-    if (!s || !s.emp_id) return null;
-    if (Date.now() - s.ts > 30 * 24 * 3600000) return null;
+    if (!s || !s.emp_id || Date.now() - s.ts > 30 * 24 * 3600000) return null;
     return { emp_id: s.emp_id, name: s.name };
   } catch (_) { return null; }
 }
@@ -424,10 +468,10 @@ function signOut() {
   clearLocalTimers();
   $("who").style.display = "none";
   $("bootNote").textContent = "";
+  closeSheet();
   go("scWelcome");
 }
 
-/* Local record of "I answered for this date" — keyed per employee */
 function answerKey() { return "canteen_ans_" + (session ? session.emp_id : "x"); }
 function loadAnswers() {
   try { answered = JSON.parse(localStorage.getItem(answerKey()) || "{}"); } catch (_) { answered = {}; }
@@ -441,7 +485,7 @@ function markAnswered(dstr) {
   renderReminderTimes();
 }
 
-/* ── Auth flows ─────────────────────────────────────── */
+/* ── Auth ───────────────────────────────────────────── */
 async function doLogin() {
   const emp_id = $("lgId").value.trim();
   const password = $("lgPw").value;
@@ -452,7 +496,8 @@ async function doLogin() {
     if ($("remember").checked) saveSession({ emp_id: d.emp_id, name: d.name });
     await start(d.emp_id, d.name);
   } catch (e) {
-    alertBox("lgAlert", e.message === "Invalid password" ? "That password doesn't match. Try again." : e.message);
+    alertBox("lgAlert", /invalid password|unauthorized/i.test(e.message)
+      ? "That employee ID and password don't match." : e.message);
   } finally { busy("lgBtn", false); }
 }
 
@@ -466,11 +511,11 @@ async function doFirstLogin() {
     firstLoginId = emp_id;
     go("scPwd");
   } catch (e) {
-    const m = e.message.includes("already") ? "This account is already set up — sign in with your password."
-            : e.message.includes("DOB") ? "That date of birth doesn't match our records."
-            : e.message.includes("not found") ? "No employee found with that ID."
-            : e.message;
-    alertBox("flAlert", m);
+    alertBox("flAlert",
+      /already/i.test(e.message) ? "This account is already set up — sign in with your password."
+      : /dob/i.test(e.message) ? "That date of birth doesn't match our records."
+      : /not found/i.test(e.message) ? "No employee found with that ID."
+      : e.message);
   } finally { busy("flBtn", false); }
 }
 
@@ -481,15 +526,15 @@ async function doSetPassword() {
   busy("npBtn", true, "Saving…");
   try {
     await api("/change-password", { emp_id: firstLoginId, new_password: a });
-    saveSession({ emp_id: firstLoginId, name: firstLoginId });
     const d = await api("/login", { emp_id: firstLoginId, password: a }).catch(() => null);
+    saveSession({ emp_id: firstLoginId, name: d ? d.name : firstLoginId });
     await start(firstLoginId, d ? d.name : firstLoginId);
     toast("Password saved");
   } catch (e) { alertBox("npAlert", e.message); }
   finally { busy("npBtn", false); }
 }
 
-/* ── Start the app ──────────────────────────────────── */
+/* ── Start ──────────────────────────────────────────── */
 async function start(emp_id, name) {
   session = { emp_id, name: name || emp_id };
   saveSession(session);
@@ -501,6 +546,9 @@ async function start(emp_id, name) {
   go("scHome");
 
   await loadTimelines();
+  api("/employee/" + encodeURIComponent(emp_id) + "/usual-meal")
+    .then(d => { usualMeal = d.meal_type || null; render(); })
+    .catch(() => {});
   await refresh();
   initReminders();
   maybePrompt();
@@ -508,18 +556,26 @@ async function start(emp_id, name) {
 
 async function loadTimelines() {
   try {
-    timelines = await api("/meal-timelines");
+    const data = await api("/meal-timelines");
+    const keys = Object.keys(data || {});
+    if (keys.length) {
+      keys.sort((a, b) => parseClock(data[a].end_time) - parseClock(data[b].end_time));
+      TYPES = keys;
+      timelines = data;
+      return;
+    }
+    throw new Error("empty");
   } catch (_) {
     const mins = istMinutes();
     timelines = {};
-    TYPES.forEach(t => { timelines[t] = { end_time: "", open_today: mins < FALLBACK_CUTOFF[t] }; });
+    TYPES.forEach(t => { timelines[t] = { end_time: "", open_today: mins < (FALLBACK_CUTOFF[t] || 1440) }; });
   }
 }
 
 async function refresh() {
-  if (!session) return;
+  if (!session || !API) return;
   const d = activeDate();
-  render();  // paint whatever we already have
+  render();
   try {
     const [m, tk] = await Promise.all([
       api("/meals/" + encodeURIComponent(session.emp_id) + "/" + d),
@@ -528,7 +584,7 @@ async function refresh() {
     regs[d] = new Set(m.registered_meals || []);
     tokens[d] = tk.tokens || {};
   } catch (e) {
-    toast("Couldn't load your meals. Pull to refresh.", true);
+    toast("Couldn't load your meals. Check your connection.", true);
   }
   render();
 }
@@ -540,73 +596,76 @@ function setDay(i) {
   refresh();
 }
 
-/* ── Is this meal still open? ───────────────────────── */
 function isOpen(type) {
-  if (dayIdx > 0) return true;                        // tomorrow is always open
+  if (dayIdx > 0) return true;
   const t = timelines[type];
   if (t && typeof t.open_today === "boolean") return t.open_today;
-  return istMinutes() < FALLBACK_CUTOFF[type];
+  return istMinutes() < (FALLBACK_CUTOFF[type] || 1440);
 }
 
 /* ── Render ─────────────────────────────────────────── */
-function render() {
+function mealRow(t, opts) {
   const d = activeDate();
   const set = regs[d] || new Set();
   const tks = tokens[d] || {};
+  const on = set.has(t), open = isOpen(t), tok = tks[t];
+
+  let meta;
+  if (tok) meta = '<span class="token">Token ' + tok.token_number + (tok.issued_at ? " · " + tok.issued_at : "") + "</span>";
+  else if (!open) meta = "Closed" + (timelines[t] && timelines[t].end_time ? " at " + timelines[t].end_time : "");
+  else if (timelines[t] && timelines[t].end_time) meta = "Book by " + timelines[t].end_time;
+  else meta = on ? "You're on the list" : "Not booked";
+
+  const tappable = open && !tok;
+  const usual = (t === usualMeal && !on && open) ? '<span class="usual">Usual</span>' : "";
+  const handler = opts && opts.onclick ? opts.onclick : "toggle('" + t + "')";
+
+  return '<button class="meal' + (on ? " on" : "") + (tok ? " collected" : "") +
+    (!open && !tok ? " locked" : "") + '" data-type="' + t + '" aria-pressed="' + on + '" ' +
+    (tappable ? 'onclick="' + handler + '"' : "disabled") + ">" +
+      '<span class="tile">' + icon(t) + "</span>" +
+      "<span><span class=\"name\">" + label(t) + usual + "</span><span class=\"meta\">" + meta + "</span></span>" +
+      '<span class="box"><svg viewBox="0 0 20 20"><polyline points="4,10.5 8,14.5 16,5.5"/></svg></span>' +
+    "</button>";
+}
+
+function render() {
+  const d = activeDate();
+  const set = regs[d] || new Set();
   const openTypes = TYPES.filter(isOpen);
+  const booked = TYPES.filter(t => set.has(t));
 
   $("stEyebrow").textContent = (dayIdx === 0 ? "Today" : "Tomorrow") + " · " + dayName(d);
 
-  const booked = TYPES.filter(t => set.has(t));
-  if (booked.length === 3) {
-    $("stLine").textContent = "All three meals booked.";
-  } else if (booked.length) {
-    $("stLine").textContent = booked.map(t => LABEL[t]).join(" and ") + " booked.";
+  if (booked.length === 1) {
+    $("stLine").textContent = label(booked[0]) + " booked.";
+  } else if (booked.length > 1) {
+    $("stLine").textContent = booked.map(label).join(" and ") + " booked.";
   } else if (answered[d]) {
     $("stLine").textContent = "No meals " + (dayIdx === 0 ? "today" : "tomorrow") + ".";
   } else {
     $("stLine").textContent = dayIdx === 0 ? "Eating in today?" : "Eating in tomorrow?";
   }
 
-  if (!openTypes.length) {
-    $("stSub").textContent = "Registration has closed for today.";
-  } else if (booked.length) {
-    $("stSub").innerHTML = "Tap a meal to change it.";
-  } else {
-    $("stSub").innerHTML = "Tap the meals you want, or answer below.";
-  }
-  $("quick").style.display = openTypes.length ? "flex" : "none";
+  if (!openTypes.length) $("stSub").textContent = "Registration has closed for today.";
+  else if (booked.length) $("stSub").textContent = "Tap a meal to add or remove it.";
+  else if (answered[d]) $("stSub").textContent = "Changed your mind? Tap a meal.";
+  else $("stSub").textContent = "Tap the meal you want.";
 
-  $("meals").innerHTML = TYPES.map(t => {
-    const on = set.has(t);
-    const open = isOpen(t);
-    const tok = tks[t];
-    let meta;
-    if (tok) meta = '<span class="token">Token ' + tok.token_number + (tok.issued_at ? " · " + tok.issued_at : "") + "</span>";
-    else if (!open) meta = "Closed" + (timelines[t] && timelines[t].end_time ? " at " + timelines[t].end_time : "");
-    else if (timelines[t] && timelines[t].end_time) meta = "Book by " + timelines[t].end_time;
-    else meta = on ? "You're on the list" : "Not booked";
+  $("meals").innerHTML = TYPES.map(t => mealRow(t)).join("");
 
-    const tappable = open && !tok;
-    return '<button class="meal' + (on ? " on" : "") + (tok ? " collected" : "") +
-      (!open && !tok ? " locked" : "") + '" ' +
-      'data-type="' + t + '" aria-pressed="' + on + '" ' +
-      (tappable ? 'onclick="toggle(\'' + t + '\')"' : "disabled") + '>' +
-        '<span class="tile">' + INITIAL[t] + '</span>' +
-        '<span><span class="name">' + LABEL[t] + '</span><span class="meta">' + meta + '</span></span>' +
-        '<span class="box"><svg viewBox="0 0 20 20"><polyline points="4,10.5 8,14.5 16,5.5"/></svg></span>' +
-      '</button>';
-  }).join("");
+  const showDecline = openTypes.length && !booked.length && !answered[d];
+  $("declineWrap").style.display = showDecline ? "block" : "none";
+  $("declineBtn").textContent = "Not eating in " + (dayIdx === 0 ? "today" : "tomorrow");
 }
 
-/* ── Toggle one meal ────────────────────────────────── */
+/* ── Book / cancel one meal ─────────────────────────── */
 async function toggle(type) {
   const d = activeDate();
   if (!regs[d]) regs[d] = new Set();
   const set = regs[d];
   const wasOn = set.has(type);
 
-  // optimistic
   if (wasOn) set.delete(type); else set.add(type);
   render();
   const row = document.querySelector('.meal[data-type="' + type + '"]');
@@ -616,36 +675,39 @@ async function toggle(type) {
     await api(wasOn ? "/meals/unregister" : "/meals/register",
       { emp_id: session.emp_id, meal_date: d, meal_type: type });
     if (!wasOn) markAnswered(d);
-    toast(wasOn ? LABEL[type] + " cancelled" : LABEL[type] + " booked");
+    toast(wasOn ? label(type) + " cancelled" : label(type) + " booked");
   } catch (e) {
-    if (wasOn) set.add(type); else set.delete(type);   // roll back
+    if (wasOn) set.add(type); else set.delete(type);
     toast(e.message, true);
   }
   render();
 }
 
-/* ── Yes to all / No meals ──────────────────────────── */
-async function answerAll(yes) {
+/* Book from the prompt sheet, then get out of the way */
+async function bookFromSheet(type) {
+  closeSheet();
+  if (dayIdx !== 0) setDay(0);
+  await toggle(type);
+}
+
+/* ── Not eating in ──────────────────────────────────── */
+async function declineDay() {
+  closeSheet();
   const d = activeDate();
-  const wanted = yes ? TYPES.filter(isOpen) : [];
   const prev = new Set(regs[d] || []);
-  regs[d] = new Set(wanted);
+  regs[d] = new Set();
   render();
   try {
-    await api("/meals/respond", { emp_id: session.emp_id, meal_date: d, meals: wanted });
+    await api("/meals/respond", { emp_id: session.emp_id, meal_date: d, meals: [] });
     markAnswered(d);
-    toast(yes ? "All meals booked" : "Marked as no meals");
+    toast("Marked as not eating in");
   } catch (e) {
-    // Backend without /meals/respond — fall back to one call per meal
     try {
-      for (const t of TYPES.filter(isOpen)) {
-        const want = wanted.includes(t), had = prev.has(t);
-        if (want === had) continue;
-        await api(want ? "/meals/register" : "/meals/unregister",
-          { emp_id: session.emp_id, meal_date: d, meal_type: t });
+      for (const t of prev) {
+        if (isOpen(t)) await api("/meals/unregister", { emp_id: session.emp_id, meal_date: d, meal_type: t });
       }
       markAnswered(d);
-      toast(yes ? "All meals booked" : "Marked as no meals");
+      toast("Marked as not eating in");
     } catch (e2) {
       regs[d] = prev;
       toast(e2.message, true);
@@ -655,35 +717,31 @@ async function answerAll(yes) {
   await refresh();
 }
 
-/* ── Daily prompt sheet ─────────────────────────────── */
+/* ── Daily prompt ───────────────────────────────────── */
 function maybePrompt() {
   const d = istDate(0);
-  if (answered[d]) return;
-  if ((regs[d] || new Set()).size) return;           // already booked something today
-  if (!TYPES.some(t => isOpen(t))) return;           // everything closed already
-  if (sessionStorage.getItem("canteen_sheet_" + d)) return;  // don't nag twice per app open
+  if (!API || answered[d]) return;
+  if ((regs[d] || new Set()).size) return;
+  if (!TYPES.some(isOpen)) return;
+  if (sessionStorage.getItem("canteen_sheet_" + d)) return;
   openSheet();
 }
 function openSheet() {
   const d = istDate(0);
+  if (dayIdx !== 0) { dayIdx = 0; $("tabToday").classList.add("on"); $("tabTom").classList.remove("on"); }
   $("shTitle").textContent = "Eating in today?";
-  $("shSub").textContent = "Tell the kitchen once and you're set for " + dayName(d, { weekday: "long" }) + ".";
+  $("shSub").textContent = "Tap the meal you want for " + dayName(d, { weekday: "long" }) + ".";
+  const open = TYPES.filter(isOpen);
+  const ordered = usualMeal && open.includes(usualMeal)
+    ? [usualMeal].concat(open.filter(t => t !== usualMeal)) : open;
+  $("sheetMeals").innerHTML = ordered.map(t => mealRow(t, { onclick: "bookFromSheet('" + t + "')" })).join("");
   $("scrim").classList.add("show");
   sessionStorage.setItem("canteen_sheet_" + d, "1");
 }
 function closeSheet() { $("scrim").classList.remove("show"); }
-async function sheetAnswer(yes) {
-  closeSheet();
-  if (dayIdx !== 0) setDay(0);
-  await answerAll(yes);
-}
 
-/* ═══════════════════════════════════════════════════════
-   Reminders
-   Preferred: Web Push from the server (works with the
-   browser closed). Falls back to on-device reminders that
-   fire while the portal is open in a tab.
-   ═══════════════════════════════════════════════════════ */
+/* ═══ Reminders ═══════════════════════════════════════ */
+function swUrl() { return "sw.js?api=" + encodeURIComponent(API); }
 
 async function initReminders() {
   if (!("Notification" in window) || !("serviceWorker" in navigator)) {
@@ -691,18 +749,16 @@ async function initReminders() {
     return renderReminders();
   }
   try {
-    const reg = await navigator.serviceWorker.register("sw.js");
+    const reg = await navigator.serviceWorker.register(swUrl());
     await navigator.serviceWorker.ready;
     if (Notification.permission === "granted") {
       const ok = await subscribePush(reg);
       pushMode = ok ? "server" : "local";
       if (!ok) scheduleLocal();
-    } else if (Notification.permission === "denied") {
-      pushMode = "denied";
     } else {
-      pushMode = "off";
+      pushMode = Notification.permission === "denied" ? "denied" : "off";
     }
-  } catch (e) {
+  } catch (_) {
     pushMode = Notification.permission === "granted" ? "local" : "off";
     if (pushMode === "local") scheduleLocal();
   }
@@ -710,12 +766,8 @@ async function initReminders() {
 }
 
 async function enableReminders() {
-  if (pushMode === "unsupported") {
-    return toast("This browser can't show notifications. Try Chrome on Android.", true);
-  }
-  if (Notification.permission === "denied") {
-    return toast("Notifications are blocked. Turn them on in your browser's site settings.", true);
-  }
+  if (pushMode === "unsupported") return toast("This browser can't show notifications. Try Chrome on Android.", true);
+  if (Notification.permission === "denied") return toast("Notifications are blocked. Allow them in your browser's site settings.", true);
   busy("remBtn", true, "Waiting for permission…");
   try {
     const perm = await Notification.requestPermission();
@@ -724,17 +776,17 @@ async function enableReminders() {
       toast("Reminders stay off until you allow notifications.", true);
       return;
     }
-    const reg = await navigator.serviceWorker.register("sw.js");
+    const reg = await navigator.serviceWorker.register(swUrl());
     await navigator.serviceWorker.ready;
     const ok = await subscribePush(reg);
     pushMode = ok ? "server" : "local";
     if (!ok) scheduleLocal();
     reg.showNotification("Reminders are on", {
-      body: "We'll ask at 7 AM. Answer Yes or No right from the notification.",
+      body: "We'll ask at 7 AM. Book your meal right from the notification.",
       icon: "icon-192.png", badge: "icon-192.png", tag: "canteen-welcome"
     });
     toast(ok ? "Reminders on" : "Reminders on for this device");
-  } catch (e) {
+  } catch (_) {
     toast("Couldn't turn on reminders. Try again.", true);
   } finally {
     busy("remBtn", false);
@@ -747,21 +799,13 @@ async function subscribePush(reg) {
     const { key } = await api("/push/public-key");
     if (!key) return false;
     let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
-    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
     const j = sub.toJSON();
     await api("/push/subscribe", {
-      emp_id: session.emp_id,
-      endpoint: sub.endpoint,
-      p256dh: j.keys.p256dh,
-      auth: j.keys.auth,
-      tz_offset_minutes: -new Date().getTimezoneOffset()
+      emp_id: session.emp_id, endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth
     });
     return true;
-  } catch (_) {
-    return false;   // no VAPID configured yet → device-only reminders
-  }
+  } catch (_) { return false; }
 }
 
 function b64ToBytes(base64) {
@@ -770,7 +814,6 @@ function b64ToBytes(base64) {
   return Uint8Array.from(raw, c => c.charCodeAt(0));
 }
 
-/* Device-only fallback: fire while the page is open */
 function clearLocalTimers() { localTimers.forEach(clearTimeout); localTimers = []; }
 function scheduleLocal() {
   clearLocalTimers();
@@ -780,62 +823,58 @@ function scheduleLocal() {
     if (at <= now) return;
     localTimers.push(setTimeout(() => {
       const d = istDate(0);
-      if (answered[d]) return;                       // morning answer silences the rest
-      if (!TYPES.some(isOpen)) return;
-      if (document.visibilityState === "visible") { openSheet(); return; }
+      if (answered[d] || !TYPES.some(isOpen)) return;
+      if (document.visibilityState === "visible") return openSheet();
+      const pick = usualMeal && isOpen(usualMeal) ? usualMeal : null;
       navigator.serviceWorker.ready.then(reg => reg.showNotification("Eating in today?", {
-        body: "Tap to book breakfast, lunch and dinner.",
+        body: pick ? "Tap to book " + label(pick) + "." : "Tap to book your meal.",
         icon: "icon-192.png", badge: "icon-192.png",
         tag: "canteen-" + d, renotify: true, requireInteraction: true,
-        data: { emp_id: session.emp_id, date: d, meals: TYPES.filter(isOpen) },
-        actions: [{ action: "yes", title: "Yes" }, { action: "no", title: "No" }]
+        data: { emp_id: session.emp_id, date: d, meals: pick ? [pick] : [] },
+        actions: pick
+          ? [{ action: "yes", title: "Book " + label(pick) }, { action: "no", title: "Not today" }]
+          : [{ action: "no", title: "Not today" }]
       })).catch(() => {});
     }, (at - now) * 60000));
   });
 }
 
 function renderReminders() {
-  const btn = $("remBtn"), title = $("remTitle"), body = $("remBody"), icon = $("remIcon");
+  const btn = $("remBtn"), title = $("remTitle"), body = $("remBody"), icn = $("remIcon");
+  icn.innerHTML = (pushMode === "denied" || pushMode === "unsupported") ? BELL_OFF : BELL_ICON;
   if (pushMode === "server") {
-    icon.textContent = "🔔"; title.textContent = "Reminders are on";
-    body.textContent = "We'll ask if you're eating in. Answer Yes or No straight from the notification — no need to open the app.";
+    title.textContent = "Reminders are on";
+    body.textContent = "We'll ask if you're eating in. Book your usual meal straight from the notification — no need to open the app.";
     btn.style.display = "none";
   } else if (pushMode === "local") {
-    icon.textContent = "🔔"; title.textContent = "Reminders on this device";
+    title.textContent = "Reminders on this device";
     body.textContent = "You'll be asked while the portal is open. Add Canteen to your home screen so reminders keep working in the background.";
     btn.style.display = "none";
   } else if (pushMode === "denied") {
-    icon.textContent = "🔕"; title.textContent = "Notifications are blocked";
-    body.textContent = "Open your browser's site settings for this page and allow notifications, then reload.";
+    title.textContent = "Notifications are blocked";
+    body.textContent = "Open your browser's site settings for this page, allow notifications, then reload.";
     btn.style.display = "none";
   } else if (pushMode === "unsupported") {
-    icon.textContent = "🔕"; title.textContent = "Reminders aren't available here";
+    title.textContent = "Reminders aren't available here";
     body.textContent = "Open the portal in Chrome on Android to get daily reminders.";
     btn.style.display = "none";
   } else {
-    icon.textContent = "🔔"; title.textContent = "Daily reminders";
-    body.textContent = "Get a notification asking if you're eating in. Answer Yes or No right from the notification.";
+    title.textContent = "Daily reminders";
+    body.textContent = "Get a notification asking if you're eating in. Book your meal right from the notification.";
     btn.style.display = "flex";
   }
   renderReminderTimes();
 }
 
 function renderReminderTimes() {
-  const d = istDate(0);
-  const done = !!answered[d];
+  const done = !!answered[istDate(0)];
   const now = istMinutes();
   $("remTimes").innerHTML = PROMPT_HOURS.map(h => {
-    const label = (h % 12 || 12) + " " + (h < 12 ? "AM" : "PM");
-    let cls = "chip";
-    if (done) cls += " done";
-    else if (h * 60 > now) cls += " live";
-    else cls += " done";
-    return '<span class="' + cls + '">' + label + "</span>";
-  }).join("") +
-  (done ? '<span class="chip live">Answered — no more asks today</span>' : "");
+    const t = (h % 12 || 12) + " " + (h < 12 ? "AM" : "PM");
+    return '<span class="chip ' + (done || h * 60 <= now ? "done" : "live") + '">' + t + "</span>";
+  }).join("") + (done ? '<span class="chip live">Answered — no more asks today</span>' : "");
 }
 
-/* Service worker tells us the employee answered from a notification */
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", e => {
     if (e.data && e.data.type === "meals-updated") {
@@ -845,8 +884,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-/* Refresh when the app comes back to the foreground */
-document.addEventListener("change", () => {
+document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && session) {
     loadTimelines().then(refresh).then(maybePrompt);
   }
@@ -854,7 +892,20 @@ document.addEventListener("change", () => {
 
 /* ── Boot ───────────────────────────────────────────── */
 (async function boot() {
+  $("brandMark").innerHTML = icon("lunch");
   go("scWelcome");
+
+  if (!API) {
+    $("setupBanner").className = "setup show";
+    $("setupBanner").innerHTML =
+      "<b>The API address isn't set</b>On Render, add an environment variable " +
+      "<code>VITE_API_URL</code> with your backend URL (for example " +
+      "<code>https://canteen-portal-api.onrender.com</code>), set the build command to " +
+      "<code>bash build.sh</code>, and redeploy.";
+    $("bootNote").textContent = "";
+    return;
+  }
+
   const s = loadSession();
   if (s) {
     $("bootNote").textContent = "Signing you in…";
