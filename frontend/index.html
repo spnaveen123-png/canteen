@@ -60,12 +60,19 @@ header{
   backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
   border-bottom:1px solid var(--line);
 }
-.mark{width:30px;height:30px;border-radius:9px;background:var(--leaf);color:var(--paper);
+.mark{width:32px;height:32px;border-radius:9px;background:var(--leaf);color:var(--paper);
   display:grid;place-items:center;flex-shrink:0}
-.mark svg{width:30px;height:30px}
-.wordmark{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:.95rem;letter-spacing:-.02em}
-.who{margin-left:auto;display:none;align-items:center;gap:6px;background:none;border:1px solid var(--line);
-  border-radius:99px;padding:.3rem .7rem;font-size:.76rem;color:var(--ink2);cursor:pointer}
+.mark svg{width:32px;height:32px}
+.lockup{display:flex;flex-direction:column;justify-content:center;gap:1px;min-width:0}
+.wordmark{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:.95rem;letter-spacing:-.02em;line-height:1;white-space:nowrap}
+.tagline{font-size:.56rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--leaf);line-height:1;white-space:nowrap}
+.offchip{display:none;margin-left:auto;align-items:center;gap:5px;background:var(--turmeric-soft);
+  border:1px solid transparent;border-radius:99px;padding:.3rem .62rem;cursor:pointer;
+  font-size:.72rem;font-weight:700;letter-spacing:.04em;color:var(--turmeric);white-space:nowrap}
+.offchip.show{display:flex}
+.who{margin-left:.45rem;display:none;align-items:center;gap:6px;background:none;border:1px solid var(--line);
+  border-radius:99px;padding:.3rem .7rem;font-size:.76rem;color:var(--ink2);cursor:pointer;
+  white-space:nowrap;max-width:7.5rem;overflow:hidden;text-overflow:ellipsis}
 .who .dot{width:5px;height:5px;border-radius:99px;background:var(--leaf)}
 
 main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5rem + env(safe-area-inset-bottom))}
@@ -115,6 +122,16 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
   font-size:.87rem;font-weight:600;color:var(--ink2);transition:background .15s,color .15s}
 .dayswitch button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1)}
 .dayswitch button span{display:block;font-size:.68rem;font-weight:500;color:var(--ink2);margin-top:1px}
+.dayswitch button span em{font-style:normal;color:var(--turmeric);font-weight:700}
+
+.daygrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.daygrid button{background:var(--sunk);border:1px solid var(--line);border-radius:11px;
+  padding:.85rem .2rem;font-size:.86rem;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+.daygrid button.on{background:var(--leaf);border-color:var(--leaf);color:var(--on-leaf)}
+.daygrid button:active{transform:scale(.97)}
+
+.offnote{display:flex;align-items:flex-start;gap:.55rem;background:var(--turmeric-soft);color:var(--turmeric);
+  border-radius:10px;padding:.6rem .75rem;font-size:.79rem;line-height:1.4;margin-top:.9rem;font-weight:500}
 
 /* ── Status ────────────────────────────────────────── */
 .status{padding:1.3rem 1.15rem 1.2rem}
@@ -204,7 +221,11 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 
 <header>
   <div class="mark" id="brandMark"></div>
-  <div class="wordmark">Canteen</div>
+  <div class="lockup">
+    <div class="wordmark">Canteen</div>
+    <div class="tagline">Cook to the count</div>
+  </div>
+  <button class="offchip" id="offChip" onclick="openWeeklyOff()" title="Your weekly off"></button>
   <button class="who" id="who" onclick="signOut()"><span class="dot"></span><span id="whoName"></span></button>
 </header>
 
@@ -322,6 +343,16 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
   </div>
 </div>
 
+<div class="scrim" id="woScrim" onclick="if(event.target===this)closeWeeklyOff()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="woTitle">
+    <div class="grip"></div>
+    <h2 class="display" id="woTitle">When's your weekly off?</h2>
+    <p>We'll stop the reminders on that day. You can still book if you come in for audit or overtime.</p>
+    <div class="daygrid" id="woGrid"></div>
+    <button class="btn btn-quiet" style="margin-top:.9rem" onclick="saveWeeklyOff(null)">I don't have a fixed off</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- Written by build.sh from the VITE_API_URL environment variable.
@@ -353,7 +384,11 @@ const API = resolveApi();
    used when the API can't be reached. */
 let TYPES = ["breakfast", "lunch", "dinner"];
 const FALLBACK_CUTOFF = { breakfast: 9 * 60, lunch: 15 * 60, snacks: 17 * 60 + 30, dinner: 20 * 60 + 30 };
-const PROMPT_HOURS = [7, 12, 20];
+let PROMPT_HOURS = [6, 8, 18];        // replaced by /settings
+const DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_LONG  = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+/* JS getDay() is Sunday-first; the backend uses Python's Monday-first. */
+function pyWeekday(dstr) { return (new Date(dstr + "T00:00:00").getDay() + 6) % 7; }
 
 const ICONS = {
   /* chai glass and steam */
@@ -371,14 +406,16 @@ function icon(type) {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
     'stroke-linecap="round" stroke-linejoin="round">' + (ICONS[type] || ICONS._default) + "</svg>";
 }
-/* The mark: a checkmark that is also a leaf, on a plate.
-   A confirmed head becomes exactly one portion cooked, so nothing is binned. */
+/* The mark is a hot plate — it says "canteen", which is the one thing an icon
+   can actually say. The concept ("cook to the count") lives in the wordmark
+   lockup and the copy, where a reader can take it in. */
 const BRAND =
   '<svg viewBox="0 0 100 100" aria-hidden="true">' +
-    '<circle cx="50" cy="50" r="36" fill="currentColor"/>' +
-    '<path d="M32.5 51.5 43.5 62.5" fill="none" stroke="var(--leaf)" stroke-width="9" stroke-linecap="round"/>' +
-    '<path d="M43.5 62.5C42.6 46.6 52.4 35.4 71.5 31.5 74.2 51.4 63.2 62 43.5 62.5Z" fill="var(--leaf)"/>' +
-    '<path d="M45.5 60.5C50.5 50 58.2 41.6 68.5 34.4" fill="none" stroke="currentColor" stroke-width="3.1" stroke-linecap="round"/>' +
+    '<path d="M13 57h74a37 37 0 0 1-74 0Z" fill="currentColor"/>' +
+    '<rect x="9" y="61.5" width="82" height="7" rx="3.5" fill="currentColor"/>' +
+    '<path d="M50 46.5c-3.6-4.6 3.6-8 0-12.6M36.5 48c-2.9-3.7 2.9-6.4 0-10.1' +
+      'M63.5 48c-2.9-3.7 2.9-6.4 0-10.1" stroke="var(--turmeric)" stroke-width="4.8" ' +
+      'fill="none" stroke-linecap="round"/>' +
   '</svg>';
 
 const BELL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8.8a6 6 0 1 0-12 0c0 6-2.2 7.6-2.2 7.6h16.4S18 14.8 18 8.8Z"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>';
@@ -387,10 +424,13 @@ const BELL_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 let session = null;
 let dayIdx = 0;
 let timelines = {};
+let days = {};          // { "YYYY-MM-DD": { serving, reason, meals:{type:{end_time,open}} } }
 let regs = {};
 let tokens = {};
 let answered = {};
 let usualMeal = null;
+let weeklyOff = null;      // 0=Mon … 6=Sun, or null
+let offAsked = false;
 let pushMode = "off";
 let firstLoginId = null;
 let localTimers = [];
@@ -550,19 +590,35 @@ async function start(emp_id, name) {
   session = { emp_id, name: name || emp_id };
   saveSession(session);
   loadAnswers();
-  $("whoName").textContent = session.name;
+  $("whoName").textContent = String(session.name || "").trim().split(/\s+/)[0];
   $("who").style.display = "flex";
-  $("tabTodayD").textContent = dayName(istDate(0), { day: "numeric", month: "short" });
-  $("tabTomD").textContent = dayName(istDate(1), { day: "numeric", month: "short" });
+  renderDayTabs();
   go("scHome");
 
   await loadTimelines();
+
+  api("/settings").then(d => {
+    if (d && d.reminder_hours && d.reminder_hours.length) {
+      PROMPT_HOURS = d.reminder_hours;
+      renderReminderTimes();
+    }
+  }).catch(() => {});
+
+  api("/employee/" + encodeURIComponent(emp_id) + "/settings").then(d => {
+    weeklyOff = (d && typeof d.weekly_off === "number") ? d.weekly_off : null;
+    offAsked = !!(d && d.asked);
+    renderOffChip();
+    renderDayTabs();
+    render();
+  }).catch(() => {});
+
   api("/employee/" + encodeURIComponent(emp_id) + "/usual-meal")
     .then(d => { usualMeal = d.meal_type || null; render(); })
     .catch(() => {});
   await refresh();
   initReminders();
   maybePrompt();
+  setTimeout(maybeAskWeeklyOff, 900);
 }
 
 async function loadTimelines() {
@@ -588,10 +644,19 @@ async function refresh() {
   const d = activeDate();
   render();
   try {
-    const [m, tk] = await Promise.all([
+    const [day, m, tk] = await Promise.all([
+      api("/day/" + d + "?emp_id=" + encodeURIComponent(session.emp_id)).catch(() => null),
       api("/meals/" + encodeURIComponent(session.emp_id) + "/" + d),
       api("/employee/" + encodeURIComponent(session.emp_id) + "/tokens/" + d).catch(() => ({ tokens: {} }))
     ]);
+    if (day && day.meals) {
+      days[d] = day;
+      const keys = Object.keys(day.meals);
+      if (keys.length) {
+        keys.sort((a, b) => parseClock(day.meals[a].end_time) - parseClock(day.meals[b].end_time));
+        TYPES = keys;
+      }
+    }
     regs[d] = new Set(m.registered_meals || []);
     tokens[d] = tk.tokens || {};
   } catch (e) {
@@ -607,11 +672,57 @@ function setDay(i) {
   refresh();
 }
 
-function isOpen(type) {
+/* The server decides what's open for a given date — it knows about Sundays,
+   holidays and cutoffs. These fallbacks only apply if /day is unreachable. */
+function dayInfo(dstr) { return days[dstr || activeDate()] || null; }
+
+function isMyOff(dstr) {
+  const info = dayInfo(dstr);
+  if (info && typeof info.weekly_off === "boolean") return info.weekly_off;
+  return weeklyOff !== null && pyWeekday(dstr || activeDate()) === weeklyOff;
+}
+
+function renderDayTabs() {
+  [[0, "tabTodayD"], [1, "tabTomD"]].forEach(([i, id]) => {
+    const d = istDate(i);
+    $(id).innerHTML = dayName(d, { day: "numeric", month: "short" }) +
+      (isMyOff(d) ? " · <em>Off</em>" : "");
+  });
+}
+
+function renderOffChip() {
+  const chip = $("offChip");
+  if (weeklyOff === null) {
+    chip.className = "offchip" + (offAsked ? "" : " show");
+    chip.textContent = offAsked ? "" : "Set weekly off";
+  } else {
+    chip.className = "offchip show";
+    chip.textContent = "Off " + DAY_SHORT[weeklyOff];
+  }
+}
+
+function isServing(dstr) {
+  const d = dayInfo(dstr);
+  return d ? d.serving !== false : true;
+}
+
+function isOpen(type, dstr) {
+  const d = dayInfo(dstr);
+  if (d) {
+    if (d.serving === false) return false;
+    const m = d.meals[type];
+    return !!(m && m.open);
+  }
   if (dayIdx > 0) return true;
   const t = timelines[type];
   if (t && typeof t.open_today === "boolean") return t.open_today;
   return istMinutes() < (FALLBACK_CUTOFF[type] || 1440);
+}
+
+function cutoffText(type, dstr) {
+  const d = dayInfo(dstr);
+  if (d && d.meals[type]) return d.meals[type].end_time || "";
+  return (timelines[type] && timelines[type].end_time) || "";
 }
 
 /* ── Render ─────────────────────────────────────────── */
@@ -623,8 +734,9 @@ function mealRow(t, opts) {
 
   let meta;
   if (tok) meta = '<span class="token">Token ' + tok.token_number + (tok.issued_at ? " · " + tok.issued_at : "") + "</span>";
-  else if (!open) meta = "Closed" + (timelines[t] && timelines[t].end_time ? " at " + timelines[t].end_time : "");
-  else if (timelines[t] && timelines[t].end_time) meta = "Book by " + timelines[t].end_time;
+  else if (!isServing(d)) meta = "Not served";
+  else if (!open) meta = "Closed" + (cutoffText(t, d) ? " at " + cutoffText(t, d) : "");
+  else if (cutoffText(t, d)) meta = "Book by " + cutoffText(t, d);
   else meta = on ? "You're on the list" : "Not booked";
 
   const tappable = open && !tok;
@@ -646,7 +758,17 @@ function render() {
   const openTypes = TYPES.filter(isOpen);
   const booked = TYPES.filter(t => set.has(t));
 
-  $("stEyebrow").textContent = (dayIdx === 0 ? "Today" : "Tomorrow") + " · " + dayName(d);
+  $("stEyebrow").textContent = (dayIdx === 0 ? "Today" : "Tomorrow") + " · " + dayName(d) +
+    (isMyOff(d) ? " · Your weekly off" : "");
+
+  const info = dayInfo(d);
+  if (info && info.serving === false) {
+    $("stLine").textContent = "Canteen closed.";
+    $("stSub").textContent = info.reason || "No meals served on this day.";
+    $("meals").innerHTML = "";
+    $("declineWrap").style.display = "none";
+    return;
+  }
 
   if (booked.length === 1) {
     $("stLine").textContent = label(booked[0]) + " booked.";
@@ -663,7 +785,20 @@ function render() {
   else if (answered[d]) $("stSub").textContent = "Changed your mind? Tap a meal.";
   else $("stSub").textContent = "Tap the meal you want.";
 
-  $("meals").innerHTML = TYPES.map(t => mealRow(t)).join("");
+  const off = isMyOff(d);
+  if (off && !booked.length) {
+    $("stLine").textContent = "You're off " + (dayIdx === 0 ? "today" : "tomorrow") + ".";
+    $("stSub").textContent = "No reminders on your off day.";
+  }
+
+  $("meals").innerHTML =
+    (off ? '<div class="offnote">' +
+             '<span>\u26A0\uFE0F</span><span>' +
+             (booked.length
+               ? "This is your weekly off, but you have a meal booked. Cancel it if you're not coming in."
+               : "This is your weekly off. Only book if you're coming in for audit or overtime.") +
+           '</span></div>' : "") +
+    TYPES.map(t => mealRow(t)).join("");
 
   const showDecline = openTypes.length && !booked.length && !answered[d];
   $("declineWrap").style.display = showDecline ? "block" : "none";
@@ -733,10 +868,20 @@ function maybePrompt() {
   const d = istDate(0);
   if (!API || answered[d]) return;
   if ((regs[d] || new Set()).size) return;
-  if (!TYPES.some(isOpen)) return;
+  if (!isServing(d)) return;
+  if (isMyOff(d)) return;                            // it's their day off
+  if (!TYPES.some(t => isOpen(t, d))) return;
   if (sessionStorage.getItem("canteen_sheet_" + d)) return;
   openSheet();
 }
+function maybeAskWeeklyOff() {
+  if (!API || !session || offAsked || weeklyOff !== null) return;
+  if ($("scrim").classList.contains("show")) return;     // meal prompt is up
+  if (sessionStorage.getItem("canteen_wo_" + session.emp_id)) return;
+  sessionStorage.setItem("canteen_wo_" + session.emp_id, "1");
+  openWeeklyOff();
+}
+
 function openSheet() {
   const d = istDate(0);
   if (dayIdx !== 0) { dayIdx = 0; $("tabToday").classList.add("on"); $("tabTom").classList.remove("on"); }
@@ -750,6 +895,36 @@ function openSheet() {
   sessionStorage.setItem("canteen_sheet_" + d, "1");
 }
 function closeSheet() { $("scrim").classList.remove("show"); }
+
+/* ── Weekly off ──────────────────────────────────────────────── */
+function openWeeklyOff() {
+  $("woGrid").innerHTML = DAY_LONG.map((n, i) =>
+    '<button class="' + (weeklyOff === i ? "on" : "") + '" onclick="saveWeeklyOff(' + i + ')">' +
+      DAY_SHORT[i] + "</button>").join("");
+  $("woScrim").classList.add("show");
+}
+function closeWeeklyOff() { $("woScrim").classList.remove("show"); }
+
+async function saveWeeklyOff(day) {
+  const prev = weeklyOff;
+  weeklyOff = day;
+  offAsked = true;
+  closeWeeklyOff();
+  renderOffChip();
+  renderDayTabs();
+  render();
+  try {
+    await api("/employee/" + encodeURIComponent(session.emp_id) + "/settings", { weekly_off: day });
+    toast(day === null ? "No weekly off set" : "Weekly off set to " + DAY_LONG[day]);
+    refresh();
+  } catch (e) {
+    weeklyOff = prev;
+    renderOffChip();
+    renderDayTabs();
+    render();
+    toast(e.message, true);
+  }
+}
 
 /* ═══ Reminders ═══════════════════════════════════════ */
 function swUrl() { return "sw.js?api=" + encodeURIComponent(API); }
@@ -834,9 +1009,10 @@ function scheduleLocal() {
     if (at <= now) return;
     localTimers.push(setTimeout(() => {
       const d = istDate(0);
-      if (answered[d] || !TYPES.some(isOpen)) return;
+      if (answered[d] || !isServing(d) || isMyOff(d)) return;
+      if (!TYPES.some(t => isOpen(t, d))) return;
       if (document.visibilityState === "visible") return openSheet();
-      const pick = usualMeal && isOpen(usualMeal) ? usualMeal : null;
+      const pick = usualMeal && isOpen(usualMeal, d) ? usualMeal : null;
       navigator.serviceWorker.ready.then(reg => reg.showNotification("Eating in today?", {
         body: pick ? "Tap to book " + label(pick) + "." : "Tap to book your meal.",
         icon: "icon-192.png", badge: "icon-192.png",

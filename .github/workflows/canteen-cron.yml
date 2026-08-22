@@ -1,51 +1,52 @@
 # ═══════════════════════════════════════════════════════════════
 # Canteen Portal — keep-warm + daily reminders
 #
-# GitHub Actions is free for public repos and gives 2,000 min/month
-# on private ones. This workflow does two jobs:
-#   • keeps the Render service awake during canteen hours
-#   • fires the 7 AM / 12 PM / 8 PM reminder rounds
+# One job, every 30 minutes. It warms the Render service and then
+# calls /push/run-reminders, which checks the reminder_hours row in
+# Supabase and returns immediately if no round is due.
 #
-# Set two repository secrets (Settings → Secrets → Actions):
-#   API_BASE        https://canteen-portal-api.onrender.com
-#   REMINDER_SECRET the same value set on the Render service
+# That means you change the reminder timings in Supabase, NOT here.
+# Nothing in this file needs editing when the schedule changes.
 #
-# Note: GitHub's scheduler runs on UTC and can lag 5-15 minutes when
-# their queue is busy. The warm-up runs a few minutes early to cover it.
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   API_BASE         https://canteen-portal-api.onrender.com
+#   REMINDER_SECRET  the same value set on the Render service
 # ═══════════════════════════════════════════════════════════════
 name: Canteen keep-warm and reminders
 
 on:
   schedule:
-    # Every 10 minutes, 00:30–16:30 UTC = 06:00–22:00 IST
-    - cron: "*/10 0-16 * * *"
-    # Reminder rounds: 01:30 / 06:30 / 14:30 UTC = 07:00 / 12:00 / 20:00 IST
-    - cron: "30 1,6,14 * * *"
-  workflow_dispatch:        # lets you run it by hand to test
+    # Every 30 minutes, 00:00–17:00 UTC = 05:30–22:30 IST.
+    # Widen this only if you move a reminder outside those hours.
+    - cron: "0,30 0-17 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Send a round now, ignoring the schedule"
+        type: boolean
+        default: true
 
 jobs:
-  warm:
+  ping:
     runs-on: ubuntu-latest
     steps:
       - name: Wake the service
         run: |
           for i in 1 2 3 4 5; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
-              "${{ secrets.API_BASE }}/ping") && [ "$code" = "200" ] && break
-            echo "attempt $i returned ${code:-timeout}, cold start — retrying"
+              "${{ secrets.API_BASE }}/ping") || code=""
+            [ "$code" = "200" ] && break
+            echo "attempt $i returned ${code:-timeout} — cold start, retrying"
             sleep 20
           done
-          echo "ping returned $code"
+          echo "ping returned ${code:-none}"
           [ "$code" = "200" ]
 
-  remind:
-    # Only on the reminder schedule, not on every warm-up
-    if: github.event.schedule == '30 1,6,14 * * *' || github.event_name == 'workflow_dispatch'
-    needs: warm
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send the reminder round
+      - name: Run any reminder round that is due
         run: |
+          FORCE="${{ github.event.inputs.force }}"
+          URL="${{ secrets.API_BASE }}/push/run-reminders"
+          [ "$FORCE" = "true" ] && URL="$URL?force=true"
           curl -sS --fail-with-body --max-time 120 \
-            -X POST "${{ secrets.API_BASE }}/push/run-reminders" \
+            -X POST "$URL" \
             -H "X-Reminder-Secret: ${{ secrets.REMINDER_SECRET }}"

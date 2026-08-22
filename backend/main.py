@@ -43,6 +43,16 @@ KEEPALIVE_MINUTES = int(os.getenv("KEEPALIVE_MINUTES", "12"))
 KEEPALIVE_FROM    = int(os.getenv("KEEPALIVE_FROM_HOUR", "6"))    # IST, inclusive
 KEEPALIVE_TO      = int(os.getenv("KEEPALIVE_TO_HOUR", "22"))     # IST, exclusive
 
+# The plant runs continuously, so the canteen serves every day by default.
+# This is only here for a genuine full shutdown; leave it empty normally.
+# Python weekday numbers, Mon=0 … Sun=6.
+CLOSED_WEEKDAYS = {
+    int(x) for x in os.getenv("CANTEEN_CLOSED_WEEKDAYS", "").split(",") if x.strip().isdigit()
+}
+
+WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday",
+                 "Friday", "Saturday", "Sunday"]
+
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
     raise RuntimeError(
         "Missing environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Render."
@@ -58,7 +68,9 @@ IST = pytz.timezone("Asia/Kolkata")
 # Fallback only. The real list is read from meal_timelines, so adding a row
 # there (e.g. 'snacks') makes it appear everywhere with no code change.
 DEFAULT_MEAL_TYPES = ["breakfast", "lunch", "dinner"]
-REMINDER_HOURS = [7, 12, 20]          # IST — matches the chips shown in the portal
+# Fallback only. The live value is the reminder_hours row in app_settings,
+# so the timings can be changed in Supabase without a redeploy.
+DEFAULT_REMINDER_HOURS = [6, 8, 18]       # IST
 
 _meal_cache = {"at": None, "cutoffs": {}}
 
@@ -126,11 +138,109 @@ def usual_meal(emp_id: str, days: int = 45) -> Optional[str]:
     return max(counts, key=counts.get)
 
 
+_settings_cache = {"at": None, "rows": {}}
+
+
+def app_settings() -> dict:
+    """Key/value rows from app_settings, cached for a minute."""
+    now = get_ist_now()
+    if _settings_cache["at"] and (now - _settings_cache["at"]).total_seconds() < 60:
+        return _settings_cache["rows"]
+    try:
+        res = supabase.table("app_settings").select("key, value").execute()
+        _settings_cache["rows"] = {r["key"]: r["value"] for r in (res.data or [])}
+    except Exception as e:
+        log.warning("Could not read app_settings: %s", e)
+        _settings_cache["rows"] = _settings_cache["rows"] or {}
+    _settings_cache["at"] = now
+    return _settings_cache["rows"]
+
+
+def reminder_hours() -> List[int]:
+    """
+    When the daily prompts go out, IST. Change the reminder_hours row in
+    app_settings (e.g. '6,8,18') and it takes effect within a minute — no
+    redeploy, and no editing the cron schedule, because the cron calls in
+    every 30 minutes and this decides whether a round is due.
+    """
+    raw = app_settings().get("reminder_hours", "")
+    hours = sorted({int(x) for x in str(raw).split(",")
+                    if x.strip().lstrip("-").isdigit() and 0 <= int(x) <= 23})
+    return hours or list(DEFAULT_REMINDER_HOURS)
+
+
+def weekly_off_map(emp_ids=None) -> dict:
+    """{emp_id: weekday int} — Mon=0 … Sun=6. Missing means never asked."""
+    try:
+        q = supabase.table("employee_settings").select("emp_id, weekly_off")
+        if emp_ids:
+            q = q.in_("emp_id", list(emp_ids))
+        res = q.execute()
+    except Exception as e:
+        log.warning("Could not read employee_settings: %s", e)
+        return {}
+    return {r["emp_id"]: r["weekly_off"] for r in (res.data or [])
+            if r.get("weekly_off") is not None}
+
+
+def weekly_off_for(emp_id: str):
+    return weekly_off_map([emp_id]).get(emp_id)
+
+
+_holiday_cache = {"at": None, "days": {}}
+
+
+def holidays() -> dict:
+    """{date_string: reason} from canteen_holidays, cached for 10 minutes."""
+    now = get_ist_now()
+    if _holiday_cache["at"] and (now - _holiday_cache["at"]).total_seconds() < 600:
+        return _holiday_cache["days"]
+    try:
+        since = str(now.date() - timedelta(days=1))
+        res = supabase.table("canteen_holidays").select("holiday_date, reason") \
+            .gte("holiday_date", since).execute()
+        _holiday_cache["days"] = {str(r["holiday_date"]): (r.get("reason") or "Holiday")
+                                  for r in (res.data or [])}
+        _holiday_cache["at"] = now
+    except Exception as e:
+        # Table not created yet — treat every day as a serving day.
+        log.warning("Could not read canteen_holidays: %s", e)
+        _holiday_cache["days"] = {}
+        _holiday_cache["at"] = now
+    return _holiday_cache["days"]
+
+
+def day_status(d: date):
+    """(serving, reason). Stops meals being booked on days nobody cooks."""
+    hit = holidays().get(str(d))
+    if hit:
+        return False, f"Canteen closed \u2014 {hit}"
+    if d.weekday() in CLOSED_WEEKDAYS:
+        return False, f"Canteen closed on {d.strftime('%A')}s"
+    return True, None
+
+
+def open_meals_on(d: date) -> List[str]:
+    """Meals that can still be booked for a given date."""
+    serving, _ = day_status(d)
+    if not serving:
+        return []
+    today = get_ist_now().date()
+    if d < today:
+        return []
+    if d > today:
+        return meal_types()
+    return open_meals_now()
+
+
 async def check_meal_cutoff(meal_type: str, target_date: date):
     """Only end_time is used as the cutoff — start_time is ignored."""
     ist_now = get_ist_now()
     if target_date < ist_now.date():
         return False, "Registration for past dates can't be changed."
+    serving, reason = day_status(target_date)
+    if not serving:
+        return False, reason
     if target_date > ist_now.date():
         return True, ""
     res = supabase.table("meal_timelines").select("end_time").eq("meal_type", meal_type).execute()
@@ -156,15 +266,17 @@ async def lifespan(app: FastAPI):
             from apscheduler.schedulers.background import BackgroundScheduler
             from apscheduler.triggers.cron import CronTrigger
             scheduler = BackgroundScheduler(timezone=IST)
-            for h in REMINDER_HOURS:
-                scheduler.add_job(
-                    send_daily_reminders,
-                    CronTrigger(hour=h, minute=0, timezone=IST),
-                    id=f"reminder-{h}",
-                    replace_existing=True,
-                )
+            # Fire on the hour, every hour. send_daily_reminders() checks the
+            # live reminder_hours setting and no-ops when a round isn't due, so
+            # changing the timing in Supabase works without a restart.
+            scheduler.add_job(
+                send_daily_reminders,
+                CronTrigger(minute=0, timezone=IST),
+                id="reminder-sweep",
+                replace_existing=True,
+            )
             scheduler.start()
-            log.info("Reminder scheduler started for %s IST", REMINDER_HOURS)
+            log.info("Reminder sweep started; current hours %s IST", reminder_hours())
         except Exception as e:
             log.warning("Scheduler not started: %s", e)
 
@@ -293,6 +405,7 @@ async def health_check():
             "database": "connected",
             "push": bool(VAPID_PRIVATE_KEY),
             "keepalive": bool(KEEPALIVE_URL),
+            "reminder_hours": reminder_hours(),
             "timestamp": get_ist_now().isoformat(),
         }
     except Exception as e:
@@ -313,6 +426,74 @@ async def get_meal_timelines():
             "open_today": ist_now.time() <= end_t,
         }
     return result
+
+
+@app.get("/settings")
+async def get_settings():
+    """Timings the portal shows on the reminders card."""
+    return {"reminder_hours": reminder_hours()}
+
+
+@app.get("/employee/{emp_id}/settings")
+async def get_employee_settings(emp_id: str):
+    off = weekly_off_for(emp_id)
+    return {
+        "emp_id": emp_id,
+        "weekly_off": off,
+        "weekly_off_name": WEEKDAY_NAMES[off] if off is not None else None,
+        "asked": off is not None,
+    }
+
+
+class EmployeeSettings(BaseModel):
+    weekly_off: Optional[int] = None      # Mon=0 … Sun=6, or null for none
+
+
+@app.post("/employee/{emp_id}/settings")
+async def set_employee_settings(emp_id: str, req: EmployeeSettings):
+    off = req.weekly_off
+    if off is not None and not (0 <= off <= 6):
+        raise HTTPException(400, "weekly_off must be 0 (Monday) to 6 (Sunday)")
+    supabase.table("employee_settings").upsert(
+        {"emp_id": emp_id, "weekly_off": off, "updated_at": get_ist_now().isoformat()},
+        on_conflict="emp_id",
+    ).execute()
+    return {
+        "status": "saved",
+        "weekly_off": off,
+        "weekly_off_name": WEEKDAY_NAMES[off] if off is not None else None,
+    }
+
+
+@app.get("/day/{meal_date}")
+async def get_day(meal_date: str, emp_id: Optional[str] = None):
+    """
+    Everything the portal needs about one date: whether the canteen serves at
+    all, and which meals are still open. Replaces the client guessing from
+    'is it today or tomorrow'.
+    """
+    d_obj = date.fromisoformat(meal_date)
+    serving, reason = day_status(d_obj)
+    cutoffs = fetch_cutoffs()
+    open_now = set(open_meals_on(d_obj))
+    meals = {}
+    for m in meal_types():
+        end_t = cutoffs.get(m)
+        meals[m] = {
+            "end_time": (datetime.combine(d_obj, end_t).strftime("%I:%M %p").lstrip("0")
+                         if end_t else ""),
+            "open": m in open_now,
+        }
+
+    # A weekly off is a hint, never a block. People do come in for audits and
+    # overtime, and when they do they still need feeding.
+    weekly_off = False
+    if emp_id:
+        off = weekly_off_for(emp_id)
+        weekly_off = off is not None and d_obj.weekday() == off
+
+    return {"date": str(d_obj), "serving": serving, "reason": reason,
+            "weekly_off": weekly_off, "meals": meals}
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -580,22 +761,44 @@ async def push_unsubscribe(body: dict):
 
 
 @app.post("/push/run-reminders")
-async def run_reminders(x_reminder_secret: str = Header(default="")):
+async def run_reminders(force: bool = False, x_reminder_secret: str = Header(default="")):
     """
-    Cron hook. Point cron-job.org / GitHub Actions / Render Cron at this URL for
-    07:00, 12:00 and 20:00 IST if you don't want to rely on the in-process
-    scheduler (recommended on free hosting, where the app sleeps).
+    Cron hook. Call it every 30 minutes and let the server decide whether a
+    round is due — that way the timings live in app_settings and changing them
+    needs no edit to the cron schedule.
+
+    force=true sends immediately regardless of the hour, for testing.
     """
     if REMINDER_SECRET and x_reminder_secret != REMINDER_SECRET:
         raise HTTPException(401, "Bad reminder secret")
-    return send_daily_reminders()
+    return send_daily_reminders(force=force)
 
 
-def send_daily_reminders():
+def claim_round(round_date: date, hour: int) -> bool:
     """
-    Ask everyone who hasn't answered yet today.
-    Anyone who already said Yes or No — from the app or from a notification —
-    is skipped, so the 12 PM and 8 PM rounds only reach people still undecided.
+    Only one send per (date, hour). The cron calls in several times an hour and
+    the in-process sweep may overlap it; this makes a duplicate a no-op rather
+    than a second buzz in someone's pocket.
+    """
+    try:
+        supabase.table("reminder_rounds").insert(
+            {"round_date": str(round_date), "round_hour": hour,
+             "sent_at": get_ist_now().isoformat()}
+        ).execute()
+        return True
+    except Exception:
+        return False   # already claimed, or the table is missing
+
+
+def send_daily_reminders(force: bool = False):
+    """
+    Ask everyone who hasn't answered yet.
+
+    Three things silence a notification:
+      • the employee already answered for that date, from the app or a
+        notification — so the later rounds only reach the undecided;
+      • it's that employee's weekly off;
+      • this round has already gone out (see claim_round).
     """
     if not VAPID_PRIVATE_KEY:
         log.warning("Reminders skipped: VAPID_PRIVATE_KEY not set")
@@ -603,30 +806,62 @@ def send_daily_reminders():
 
     from pywebpush import webpush, WebPushException
 
-    today = get_ist_now().date()
-    meals = open_meals_now()
+    now = get_ist_now()
+    hour = now.hour
+
+    hours = reminder_hours()
+    if not force:
+        if hour not in hours:
+            return {"sent": 0, "reason": f"no round due at {hour:02d}:00 IST",
+                    "reminder_hours": hours}
+        if not claim_round(now.date(), hour):
+            return {"sent": 0, "reason": f"round {hour:02d}:00 already sent",
+                    "reminder_hours": hours}
+
+    # The last round of the day asks about tomorrow: by then the earlier meals
+    # are shut and only tomorrow's count is still worth collecting. Everything
+    # before it asks about today.
+    last_round = max(hours) if hours else 18
+    target = now.date() if hour < last_round else now.date() + timedelta(days=1)
+
+    serving, reason = day_status(target)
+    if not serving:
+        log.info("Reminders skipped for %s: %s", target, reason)
+        return {"sent": 0, "reason": reason, "date": str(target)}
+
+    meals = open_meals_on(target)
     if not meals:
         log.info("Reminders skipped: every meal is past its cutoff")
         return {"sent": 0, "reason": "all meals closed"}
 
     answered_res = supabase.table("meal_prompt_answers").select("emp_id") \
-        .eq("meal_date", str(today)).execute()
+        .eq("meal_date", str(target)).execute()
     answered = {r["emp_id"] for r in (answered_res.data or [])}
 
     subs_res = supabase.table("push_subscriptions").select("emp_id, endpoint, p256dh, auth").execute()
 
+    # Don't buzz someone on their day off.
+    sub_emps = {r["emp_id"] for r in (subs_res.data or [])}
+    offs = weekly_off_map(sub_emps)
+    target_weekday = target.weekday()
+    resting = {e for e, off in offs.items() if off == target_weekday}
+
     sent, dropped = 0, 0
-    hour = get_ist_now().hour
+    when = "today" if target == now.date() else "tomorrow"
     title = ("Eating in today?" if hour < 11
              else "Still eating in today?" if hour < 17
-             else "Last call for today")
+             else "Eating in tomorrow?")
 
     # One lookup per employee, not per device.
     usual_by_emp = {}
 
+    skipped_off = 0
     for s in (subs_res.data or []):
         emp = s["emp_id"]
         if emp in answered:
+            continue
+        if emp in resting:
+            skipped_off += 1
             continue
 
         if emp not in usual_by_emp:
@@ -635,11 +870,11 @@ def send_daily_reminders():
         pick = usual_by_emp[emp]
 
         if pick:
-            body = f"Tap to book {pick} — or Not today if you're out."
+            body = f"Tap to book {pick} for {when}."
             action_label = f"Book {pick.capitalize()}"
             offer = [pick]
         else:
-            body = "Open Canteen to book your meal."
+            body = f"Open Canteen to book your meal for {when}."
             action_label = None
             offer = []
 
@@ -647,7 +882,7 @@ def send_daily_reminders():
             "title": title,
             "body": body,
             "emp_id": emp,
-            "date": str(today),
+            "date": str(target),
             "meals": offer,
             "action_label": action_label,
         })
@@ -673,8 +908,11 @@ def send_daily_reminders():
         except Exception as e:
             log.warning("Push error for %s: %s", emp, e)
 
-    log.info("Reminders sent=%s dropped=%s meals=%s", sent, dropped, meals)
-    return {"sent": sent, "dropped": dropped, "meals": meals, "date": str(today)}
+    log.info("Round %02d:00 for %s — sent=%s off=%s dropped=%s meals=%s",
+             hour, target, sent, skipped_off, dropped, meals)
+    return {"sent": sent, "dropped": dropped, "weekly_off_skipped": skipped_off,
+            "meals": meals, "date": str(target), "round_hour": hour,
+            "reminder_hours": hours}
 
 
 # ── Dynamic date route — MUST stay last ───────────────────────────────────────
