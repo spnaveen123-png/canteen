@@ -5,5 +5,5 @@ pydantic
 passlib
 bcrypt==4.0.1
 pytz
-pywebpush
+pywebpush          # pulls in py-vapid, which signs the notifications
 APScheduler

@@ -1,23 +1,26 @@
 # ═══════════════════════════════════════════════════════════════
 # Canteen Portal — keep-warm + daily reminders
 #
-# One job, every 30 minutes. It warms the Render service and then
-# calls /push/run-reminders, which checks the reminder_hours row in
-# Supabase and returns immediately if no round is due.
+# One job, every 30 minutes. It wakes the Render service, then calls
+# /push/run-reminders, which reads the reminder_hours row in Supabase
+# and returns immediately if no round is due.
 #
-# That means you change the reminder timings in Supabase, NOT here.
-# Nothing in this file needs editing when the schedule changes.
+# Change reminder timings in SUPABASE, not here.
 #
-# Repository secrets (Settings → Secrets and variables → Actions):
-#   API_BASE         https://canteen-portal-api.onrender.com
-#   REMINDER_SECRET  the same value set on the Render service
+# CONFIG — set ONE of these (a variable is easier to debug, since
+# secrets are masked in the logs and an empty one looks identical
+# to a working one):
+#   Settings → Secrets and variables → Actions → Variables tab
+#     API_BASE = https://your-service.onrender.com
+#   Settings → Secrets and variables → Actions → Secrets tab
+#     REMINDER_SECRET = the same value set on the Render service
 # ═══════════════════════════════════════════════════════════════
 name: Canteen keep-warm and reminders
 
 on:
   schedule:
-    # Every 30 minutes, 00:00–17:00 UTC = 05:30–22:30 IST.
-    # Widen this only if you move a reminder outside those hours.
+    # Every 30 min, 00:00–17:00 UTC = 05:30–22:30 IST.
+    # Widen only if you move a reminder outside those hours.
     - cron: "0,30 0-17 * * *"
   workflow_dispatch:
     inputs:
@@ -29,24 +32,59 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
+    env:
+      API_BASE: ${{ vars.API_BASE || secrets.API_BASE }}
+      REMINDER_SECRET: ${{ secrets.REMINDER_SECRET }}
     steps:
-      - name: Wake the service
+      - name: Check configuration
         run: |
-          for i in 1 2 3 4 5; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
-              "${{ secrets.API_BASE }}/ping") || code=""
-            [ "$code" = "200" ] && break
-            echo "attempt $i returned ${code:-timeout} — cold start, retrying"
-            sleep 20
+          if [ -z "$API_BASE" ]; then
+            echo "::error::API_BASE is not set. Add it under Settings → Secrets and variables → Actions (Variables tab) as: https://your-service.onrender.com"
+            exit 1
+          fi
+          case "$API_BASE" in
+            https://*) ;;
+            *) echo "::error::API_BASE must start with https:// — got '$API_BASE'"; exit 1 ;;
+          esac
+          echo "API_BASE looks valid."
+          [ -z "$REMINDER_SECRET" ] && echo "::warning::REMINDER_SECRET is empty. That is fine only if the server has no REMINDER_SECRET set."
+          exit 0
+
+      - name: Wake the service
+        id: wake
+        run: |
+          BASE="${API_BASE%/}"
+          for i in 1 2 3 4 5 6; do
+            http=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 100 "$BASE/ping" 2>/tmp/err); rc=$?
+            echo "attempt $i — curl exit=$rc, http=${http:-none} $( [ -s /tmp/err ] && cat /tmp/err )"
+            if [ "$rc" = "0" ] && [ "$http" = "200" ]; then
+              echo "Service is awake."; exit 0
+            fi
+            # Explain the common failures rather than just retrying blindly
+            case "$rc" in
+              3) echo "::error::curl rejected the URL. API_BASE is malformed."; exit 1 ;;
+              6) echo "::error::Could not resolve the host. Check the URL is your live Render domain."; exit 1 ;;
+            esac
+            if [ "$http" = "404" ]; then
+              echo "::error::/ping returned 404 — the deployed backend predates this endpoint. Redeploy the API."
+              exit 1
+            fi
+            echo "  cold start or still booting, waiting 25s"
+            sleep 25
           done
-          echo "ping returned ${code:-none}"
-          [ "$code" = "200" ]
+          echo "::error::Service did not respond after 6 attempts."
+          exit 1
 
       - name: Run any reminder round that is due
         run: |
-          FORCE="${{ github.event.inputs.force }}"
-          URL="${{ secrets.API_BASE }}/push/run-reminders"
-          [ "$FORCE" = "true" ] && URL="$URL?force=true"
-          curl -sS --fail-with-body --max-time 120 \
-            -X POST "$URL" \
-            -H "X-Reminder-Secret: ${{ secrets.REMINDER_SECRET }}"
+          BASE="${API_BASE%/}"
+          URL="$BASE/push/run-reminders"
+          [ "${{ github.event.inputs.force }}" = "true" ] && URL="$URL?force=true"
+          body=$(curl -sS -w '\n%{http_code}' --max-time 120 \
+            -X POST "$URL" -H "X-Reminder-Secret: $REMINDER_SECRET")
+          code=$(echo "$body" | tail -n1)
+          echo "$body" | sed '$d'
+          if [ "$code" != "200" ]; then
+            echo "::error::run-reminders returned HTTP $code"
+            exit 1
+          fi
