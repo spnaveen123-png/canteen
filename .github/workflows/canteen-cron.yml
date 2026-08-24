@@ -7,13 +7,15 @@
 #
 # Change reminder timings in SUPABASE, not here.
 #
-# CONFIG — set ONE of these (a variable is easier to debug, since
-# secrets are masked in the logs and an empty one looks identical
-# to a working one):
-#   Settings → Secrets and variables → Actions → Variables tab
-#     API_BASE = https://your-service.onrender.com
-#   Settings → Secrets and variables → Actions → Secrets tab
-#     REMINDER_SECRET = the same value set on the Render service
+# CONFIG — these live in GITHUB, not Render. Render's environment
+# variables are invisible to GitHub Actions; they are two separate
+# systems that never see each other.
+#
+#   API_BASE         defaults to the URL below. Override it only if the
+#                    backend moves: GitHub repo → Settings → Secrets and
+#                    variables → Actions → Variables tab.
+#   REMINDER_SECRET  optional. Set it here (Secrets tab) only if you also
+#                    set REMINDER_SECRET on the Render web service.
 # ═══════════════════════════════════════════════════════════════
 name: Canteen keep-warm and reminders
 
@@ -33,20 +35,21 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     env:
-      API_BASE: ${{ vars.API_BASE || secrets.API_BASE }}
+      # Public URL, so a plain default is fine — no secret needed.
+      API_BASE: ${{ vars.API_BASE || secrets.API_BASE || 'https://canteen-api-service.onrender.com' }}
       REMINDER_SECRET: ${{ secrets.REMINDER_SECRET }}
     steps:
       - name: Check configuration
         run: |
           if [ -z "$API_BASE" ]; then
-            echo "::error::API_BASE is not set. Add it under Settings → Secrets and variables → Actions (Variables tab) as: https://your-service.onrender.com"
+            echo "::error::API_BASE resolved to empty. Set it in GITHUB (repo → Settings → Secrets and variables → Actions → Variables), not in Render."
             exit 1
           fi
           case "$API_BASE" in
             https://*) ;;
             *) echo "::error::API_BASE must start with https:// — got '$API_BASE'"; exit 1 ;;
           esac
-          echo "API_BASE looks valid."
+          echo "Using API_BASE = $API_BASE"
           [ -z "$REMINDER_SECRET" ] && echo "::warning::REMINDER_SECRET is empty. That is fine only if the server has no REMINDER_SECRET set."
           exit 0
 
