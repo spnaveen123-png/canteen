@@ -56,14 +56,14 @@ self.addEventListener("push", event => {
   try { d = event.data ? event.data.json() : {}; } catch (_) {}
 
   // The server names one meal — whichever this employee usually books.
-  const bookLabel = d.action_label || (d.meals && d.meals.length ? "Book " + cap(d.meals[0]) : null);
+  const bookLabel = d.action_label || (d.meals && d.meals.length ? "Order " + cap(d.meals[0]) : null);
   const actions = bookLabel
     ? [{ action: "yes", title: bookLabel }, { action: "no", title: "Not today" }]
     : [{ action: "no", title: "Not today" }];
 
   event.waitUntil(
-    self.registration.showNotification(d.title || "Eating in today?", {
-      body: d.body || "Tap to book your meal.",
+    self.registration.showNotification(d.title || "Canteen food today?", {
+      body: d.body || "Tap to order your canteen meal.",
       icon: "./icon-192.png",
       badge: "./icon-192.png",
       tag: "canteen-" + (d.date || "prompt"),   // a later round replaces the earlier one
@@ -99,11 +99,11 @@ self.addEventListener("notificationclick", event => {
       .then(res => {
         if (!res.ok) throw new Error("save failed");
         return self.registration.showNotification(
-          action === "yes" ? cap(meals[0] || "Meal") + " booked" : "Saved — not eating in",
+          action === "yes" ? cap(meals[0] || "Meal") + " ordered" : "Saved \u2014 not ordering",
           {
             body: action === "yes"
               ? "You're on the list. Open Canteen to add another meal."
-              : "You won't be counted today.",
+              : "The kitchen won't cook a plate for you.",
             icon: "./icon-192.png",
             badge: "./icon-192.png",
             tag: "canteen-done-" + (d.date || ""),
@@ -114,7 +114,7 @@ self.addEventListener("notificationclick", event => {
       .then(() => tellPages(d.date))
       .catch(() =>
         self.registration.showNotification("Couldn't save your answer", {
-          body: "Tap here to open Canteen and book from the app.",
+          body: "Tap here to open Canteen and order from the app.",
           icon: "./icon-192.png",
           badge: "./icon-192.png",
           tag: "canteen-err"

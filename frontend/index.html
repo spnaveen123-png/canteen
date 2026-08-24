@@ -236,8 +236,8 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
   <!-- ═══ Welcome ═══ -->
   <section class="screen" id="scWelcome">
     <div class="hero">
-      <h1 class="display">Are you<br>eating in?</h1>
-      <p>Tell the kitchen what you’ll eat. They cook that many plates — no more, no less.</p>
+      <h1 class="display">Order your<br>canteen meal</h1>
+      <p>Bringing food from home? Just skip it. Order only what you’ll actually eat at the canteen — the kitchen cooks exactly that many plates.</p>
     </div>
     <div style="display:flex;flex-direction:column;gap:9px">
       <button class="btn btn-primary" onclick="go('scLogin')">Sign in</button>
@@ -307,7 +307,7 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
         <div class="sub" id="stSub"></div>
         <div class="meals" id="meals"></div>
         <div id="declineWrap" style="margin-top:.9rem;display:none">
-          <button class="btn btn-quiet" id="declineBtn" onclick="declineDay()">Not eating in today</button>
+          <button class="btn btn-quiet" id="declineBtn" onclick="declineDay()">Not ordering today</button>
         </div>
       </div>
     </div>
@@ -317,7 +317,7 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
         <div class="bell" id="remIcon"></div>
         <div style="flex:1">
           <h3 id="remTitle">Daily reminders</h3>
-          <p id="remBody">Get a notification asking if you're eating in. Book your usual meal straight from the notification.</p>
+          <p id="remBody">Get a notification asking whether you want canteen food. Order your usual meal straight from the notification.</p>
           <div class="times" id="remTimes"></div>
         </div>
       </div>
@@ -336,10 +336,10 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 <div class="scrim" id="scrim" onclick="if(event.target===this)closeSheet()">
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
     <div class="grip"></div>
-    <h2 class="display" id="shTitle">Eating in today?</h2>
+    <h2 class="display" id="shTitle">Canteen food today?</h2>
     <p id="shSub">Tap the meal you want.</p>
     <div class="meals" id="sheetMeals" style="margin-top:0"></div>
-    <button class="btn btn-quiet" style="margin-top:.9rem" onclick="declineDay()">Not eating in today</button>
+    <button class="btn btn-quiet" style="margin-top:.9rem" onclick="declineDay()">Not ordering — bringing my own</button>
   </div>
 </div>
 
@@ -347,7 +347,7 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="woTitle">
     <div class="grip"></div>
     <h2 class="display" id="woTitle">When's your weekly off?</h2>
-    <p>We'll stop the reminders on that day. You can still book if you come in for audit or overtime.</p>
+    <p>We'll stop the reminders on that day. You can still order if you come in for audit or overtime.</p>
     <div class="daygrid" id="woGrid"></div>
     <button class="btn btn-quiet" style="margin-top:.9rem" onclick="saveWeeklyOff(null)">I don't have a fixed off</button>
   </div>
@@ -736,8 +736,8 @@ function mealRow(t, opts) {
   if (tok) meta = '<span class="token">Token ' + tok.token_number + (tok.issued_at ? " · " + tok.issued_at : "") + "</span>";
   else if (!isServing(d)) meta = "Not served";
   else if (!open) meta = "Closed" + (cutoffText(t, d) ? " at " + cutoffText(t, d) : "");
-  else if (cutoffText(t, d)) meta = "Book by " + cutoffText(t, d);
-  else meta = on ? "You're on the list" : "Not booked";
+  else if (cutoffText(t, d)) meta = "Order by " + cutoffText(t, d);
+  else meta = on ? "You're on the list" : "Not ordered";
 
   const tappable = open && !tok;
   const usual = (t === usualMeal && !on && open) ? '<span class="usual">Usual</span>' : "";
@@ -755,7 +755,7 @@ function mealRow(t, opts) {
 function render() {
   const d = activeDate();
   const set = regs[d] || new Set();
-  const openTypes = TYPES.filter(isOpen);
+  const openTypes = TYPES.filter(t => isOpen(t, d));
   const booked = TYPES.filter(t => set.has(t));
 
   $("stEyebrow").textContent = (dayIdx === 0 ? "Today" : "Tomorrow") + " · " + dayName(d) +
@@ -771,19 +771,19 @@ function render() {
   }
 
   if (booked.length === 1) {
-    $("stLine").textContent = label(booked[0]) + " booked.";
+    $("stLine").textContent = label(booked[0]) + " ordered.";
   } else if (booked.length > 1) {
-    $("stLine").textContent = booked.map(label).join(" and ") + " booked.";
+    $("stLine").textContent = booked.map(label).join(" and ") + " ordered.";
   } else if (answered[d]) {
-    $("stLine").textContent = "No meals " + (dayIdx === 0 ? "today" : "tomorrow") + ".";
+    $("stLine").textContent = "Nothing ordered for " + (dayIdx === 0 ? "today" : "tomorrow") + ".";
   } else {
-    $("stLine").textContent = dayIdx === 0 ? "Eating in today?" : "Eating in tomorrow?";
+    $("stLine").textContent = dayIdx === 0 ? "Canteen food today?" : "Canteen food tomorrow?";
   }
 
   if (!openTypes.length) $("stSub").textContent = "Registration has closed for today.";
   else if (booked.length) $("stSub").textContent = "Tap a meal to add or remove it.";
-  else if (answered[d]) $("stSub").textContent = "Changed your mind? Tap a meal.";
-  else $("stSub").textContent = "Tap the meal you want.";
+  else if (answered[d]) $("stSub").textContent = "Changed your mind? Tap a meal to order it.";
+  else $("stSub").textContent = "Tap the meal you want to order at the canteen.";
 
   const off = isMyOff(d);
   if (off && !booked.length) {
@@ -795,14 +795,14 @@ function render() {
     (off ? '<div class="offnote">' +
              '<span>\u26A0\uFE0F</span><span>' +
              (booked.length
-               ? "This is your weekly off, but you have a meal booked. Cancel it if you're not coming in."
-               : "This is your weekly off. Only book if you're coming in for audit or overtime.") +
+               ? "This is your weekly off, but you have a meal on order. Cancel it if you're not coming in."
+               : "This is your weekly off. Only order if you're coming in for audit or overtime.") +
            '</span></div>' : "") +
     TYPES.map(t => mealRow(t)).join("");
 
   const showDecline = openTypes.length && !booked.length && !answered[d];
   $("declineWrap").style.display = showDecline ? "block" : "none";
-  $("declineBtn").textContent = "Not eating in " + (dayIdx === 0 ? "today" : "tomorrow");
+  $("declineBtn").textContent = "Not ordering " + (dayIdx === 0 ? "today" : "tomorrow");
 }
 
 /* ── Book / cancel one meal ─────────────────────────── */
@@ -821,7 +821,7 @@ async function toggle(type) {
     await api(wasOn ? "/meals/unregister" : "/meals/register",
       { emp_id: session.emp_id, meal_date: d, meal_type: type });
     if (!wasOn) markAnswered(d);
-    toast(wasOn ? label(type) + " cancelled" : label(type) + " booked");
+    toast(wasOn ? label(type) + " cancelled" : label(type) + " ordered");
   } catch (e) {
     if (wasOn) set.add(type); else set.delete(type);
     toast(e.message, true);
@@ -836,7 +836,7 @@ async function bookFromSheet(type) {
   await toggle(type);
 }
 
-/* ── Not eating in ──────────────────────────────────── */
+/* ── Not ordering ───────────────────────────────────── */
 async function declineDay() {
   closeSheet();
   const d = activeDate();
@@ -846,14 +846,14 @@ async function declineDay() {
   try {
     await api("/meals/respond", { emp_id: session.emp_id, meal_date: d, meals: [] });
     markAnswered(d);
-    toast("Marked as not eating in");
+    toast("Marked as not ordering");
   } catch (e) {
     try {
       for (const t of prev) {
         if (isOpen(t)) await api("/meals/unregister", { emp_id: session.emp_id, meal_date: d, meal_type: t });
       }
       markAnswered(d);
-      toast("Marked as not eating in");
+      toast("Marked as not ordering");
     } catch (e2) {
       regs[d] = prev;
       toast(e2.message, true);
@@ -882,12 +882,17 @@ function maybeAskWeeklyOff() {
   openWeeklyOff();
 }
 
-function openSheet() {
-  const d = istDate(0);
-  if (dayIdx !== 0) { dayIdx = 0; $("tabToday").classList.add("on"); $("tabTom").classList.remove("on"); }
-  $("shTitle").textContent = "Eating in today?";
-  $("shSub").textContent = "Tap the meal you want for " + dayName(d, { weekday: "long" }) + ".";
-  const open = TYPES.filter(isOpen);
+function openSheet(which) {
+  const i = which === 1 ? 1 : 0;
+  const d = istDate(i);
+  if (dayIdx !== i) {
+    dayIdx = i;
+    $("tabToday").classList.toggle("on", i === 0);
+    $("tabTom").classList.toggle("on", i === 1);
+  }
+  $("shTitle").textContent = "Canteen food " + (i === 0 ? "today" : "tomorrow") + "?";
+  $("shSub").textContent = "Tap the meal you want to order for " + dayName(d, { weekday: "long" }) + ".";
+  const open = TYPES.filter(t => isOpen(t, d));
   const ordered = usualMeal && open.includes(usualMeal)
     ? [usualMeal].concat(open.filter(t => t !== usualMeal)) : open;
   $("sheetMeals").innerHTML = ordered.map(t => mealRow(t, { onclick: "bookFromSheet('" + t + "')" })).join("");
@@ -968,7 +973,7 @@ async function enableReminders() {
     pushMode = ok ? "server" : "local";
     if (!ok) scheduleLocal();
     reg.showNotification("Reminders are on", {
-      body: "We'll ask at 7 AM. Book your meal right from the notification.",
+      body: "We'll ask each morning. Order your meal right from the notification.",
       icon: "icon-192.png", badge: "icon-192.png", tag: "canteen-welcome"
     });
     toast(ok ? "Reminders on" : "Reminders on for this device");
@@ -1008,18 +1013,21 @@ function scheduleLocal() {
     const at = h * 60;
     if (at <= now) return;
     localTimers.push(setTimeout(() => {
-      const d = istDate(0);
+      const forTomorrow = (h === lastRoundHour());
+      const d = istDate(forTomorrow ? 1 : 0);
+      const when = forTomorrow ? "tomorrow" : "today";
       if (answered[d] || !isServing(d) || isMyOff(d)) return;
       if (!TYPES.some(t => isOpen(t, d))) return;
-      if (document.visibilityState === "visible") return openSheet();
+      if (document.visibilityState === "visible") return openSheet(forTomorrow ? 1 : 0);
       const pick = usualMeal && isOpen(usualMeal, d) ? usualMeal : null;
-      navigator.serviceWorker.ready.then(reg => reg.showNotification("Eating in today?", {
-        body: pick ? "Tap to book " + label(pick) + "." : "Tap to book your meal.",
+      navigator.serviceWorker.ready.then(reg => reg.showNotification("Canteen food " + when + "?", {
+        body: pick ? "Tap to order " + label(pick) + " for " + when + "."
+                   : "Tap to order your canteen meal for " + when + ".",
         icon: "icon-192.png", badge: "icon-192.png",
         tag: "canteen-" + d, renotify: true, requireInteraction: true,
         data: { emp_id: session.emp_id, date: d, meals: pick ? [pick] : [] },
         actions: pick
-          ? [{ action: "yes", title: "Book " + label(pick) }, { action: "no", title: "Not today" }]
+          ? [{ action: "yes", title: "Order " + label(pick) }, { action: "no", title: "Not today" }]
           : [{ action: "no", title: "Not today" }]
       })).catch(() => {});
     }, (at - now) * 60000));
@@ -1031,7 +1039,7 @@ function renderReminders() {
   icn.innerHTML = (pushMode === "denied" || pushMode === "unsupported") ? BELL_OFF : BELL_ICON;
   if (pushMode === "server") {
     title.textContent = "Reminders are on";
-    body.textContent = "We'll ask if you're eating in. Book your usual meal straight from the notification — no need to open the app.";
+    body.textContent = "We'll ask whether you want canteen food. Order your usual meal straight from the notification — no need to open the app.";
     btn.style.display = "none";
   } else if (pushMode === "local") {
     title.textContent = "Reminders on this device";
@@ -1047,19 +1055,40 @@ function renderReminders() {
     btn.style.display = "none";
   } else {
     title.textContent = "Daily reminders";
-    body.textContent = "Get a notification asking if you're eating in. Book your meal right from the notification.";
+    body.textContent = "Get a notification asking whether you want canteen food. Order your meal right from the notification.";
     btn.style.display = "flex";
   }
   renderReminderTimes();
 }
 
+/* The last round of the day asks about tomorrow, so its chip has to follow
+   tomorrow's answer — not today's. Ordering today's dinner must not grey out
+   the round that collects tomorrow's count. */
+function lastRoundHour() { return Math.max.apply(null, PROMPT_HOURS); }
+
 function renderReminderTimes() {
-  const done = !!answered[istDate(0)];
+  const today = istDate(0), tom = istDate(1);
+  const last = lastRoundHour();
   const now = istMinutes();
+
   $("remTimes").innerHTML = PROMPT_HOURS.map(h => {
-    const t = (h % 12 || 12) + " " + (h < 12 ? "AM" : "PM");
-    return '<span class="chip ' + (done || h * 60 <= now ? "done" : "live") + '">' + t + "</span>";
-  }).join("") + (done ? '<span class="chip live">Answered — no more asks today</span>' : "");
+    const forTomorrow = (h === last);
+    const clock = (h % 12 || 12) + " " + (h < 12 ? "AM" : "PM");
+    const settled = answered[forTomorrow ? tom : today] || h * 60 <= now;
+    return '<span class="chip ' + (settled ? "done" : "live") + '">' + clock +
+      (forTomorrow ? ' <span style="opacity:.7;font-weight:500">tomorrow</span>' : "") + "</span>";
+  }).join("") + summaryChip(today, tom, last, now);
+}
+
+function summaryChip(today, tom, last, now) {
+  const todayRoundsLeft = PROMPT_HOURS.some(h => h !== last && h * 60 > now);
+  const tomRoundDue = last * 60 > now;
+  const quiet = (!todayRoundsLeft || answered[today]) && (!tomRoundDue || answered[tom]);
+  if (quiet) return '<span class="chip live">Nothing more to ask today</span>';
+  if (answered[today] && tomRoundDue && !answered[tom])
+    return '<span class="chip live">Today\u2019s done \u2014 we\u2019ll ask about tomorrow at ' +
+      (last % 12 || 12) + (last < 12 ? " AM" : " PM") + "</span>";
+  return "";
 }
 
 if ("serviceWorker" in navigator) {

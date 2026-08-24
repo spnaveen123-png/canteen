@@ -847,10 +847,15 @@ def send_daily_reminders(force: bool = False):
     resting = {e for e, off in offs.items() if off == target_weekday}
 
     sent, dropped = 0, 0
+    # Say "canteen" out loud. A good number of employees bring a tiffin from
+    # home, and "eating in?" is ambiguous to them.
     when = "today" if target == now.date() else "tomorrow"
-    title = ("Eating in today?" if hour < 11
-             else "Still eating in today?" if hour < 17
-             else "Eating in tomorrow?")
+    if target != now.date():
+        title = "Canteen food tomorrow?"
+    elif hour == min(hours):
+        title = "Canteen food today?"
+    else:
+        title = "You haven't ordered yet"
 
     # One lookup per employee, not per device.
     usual_by_emp = {}
@@ -870,11 +875,11 @@ def send_daily_reminders(force: bool = False):
         pick = usual_by_emp[emp]
 
         if pick:
-            body = f"Tap to book {pick} for {when}."
-            action_label = f"Book {pick.capitalize()}"
+            body = f"Tap to order {pick} at the canteen for {when}."
+            action_label = f"Order {pick.capitalize()}"
             offer = [pick]
         else:
-            body = f"Open Canteen to book your meal for {when}."
+            body = f"Open Canteen to order your meal for {when}."
             action_label = None
             offer = []
 
