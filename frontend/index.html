@@ -433,6 +433,7 @@ let weeklyOff = null;      // 0=Mon … 6=Sun, or null
 let offAsked = false;
 let pushMode = "off";
 let firstLoginId = null;
+let pendingAsk = null;     // date the notification wants answered
 let localTimers = [];
 
 /* ── Helpers ────────────────────────────────────────── */
@@ -617,8 +618,14 @@ async function start(emp_id, name) {
     .catch(() => {});
   await refresh();
   initReminders();
-  maybePrompt();
-  setTimeout(maybeAskWeeklyOff, 900);
+  if (pendingAsk) {
+    const d = pendingAsk;
+    pendingAsk = null;
+    openSheetForDate(d);
+  } else {
+    maybePrompt();
+    setTimeout(maybeAskWeeklyOff, 900);
+  }
 }
 
 async function loadTimelines() {
@@ -829,10 +836,12 @@ async function toggle(type) {
   render();
 }
 
-/* Book from the prompt sheet, then get out of the way */
+/* Order from the prompt sheet, then get out of the way.
+   openSheet() has already switched to the date being asked about — the 6 PM
+   round and a notification tap can both be about tomorrow — so do NOT force
+   the view back to today here, or the meal lands on the wrong date. */
 async function bookFromSheet(type) {
   closeSheet();
-  if (dayIdx !== 0) setDay(0);
   await toggle(type);
 }
 
@@ -880,6 +889,12 @@ function maybeAskWeeklyOff() {
   if (sessionStorage.getItem("canteen_wo_" + session.emp_id)) return;
   sessionStorage.setItem("canteen_wo_" + session.emp_id, "1");
   openWeeklyOff();
+}
+
+/* Straight from a notification tap to the meal buttons — no hunting. */
+function openSheetForDate(dstr) {
+  if (!dstr) return openSheet(0);
+  openSheet(dstr === istDate(1) ? 1 : 0);
 }
 
 function openSheet(which) {
@@ -1093,9 +1108,13 @@ function summaryChip(today, tom, last, now) {
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", e => {
-    if (e.data && e.data.type === "meals-updated") {
+    if (!e.data) return;
+    if (e.data.type === "meals-updated") {
       if (e.data.date) markAnswered(e.data.date);
       refresh();
+    }
+    if (e.data.type === "ask-meals" && session) {
+      openSheetForDate(e.data.date);
     }
   });
 }
@@ -1110,6 +1129,14 @@ document.addEventListener("visibilitychange", () => {
 (async function boot() {
   $("brandMark").innerHTML = BRAND;
   go("scWelcome");
+
+  try {
+    const ask = new URLSearchParams(location.search).get("ask");
+    if (ask) {
+      pendingAsk = ask;
+      history.replaceState(null, "", location.pathname);   // don't re-trigger on reload
+    }
+  } catch (_) {}
 
   if (!API) {
     $("setupBanner").className = "setup show";

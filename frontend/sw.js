@@ -57,9 +57,14 @@ self.addEventListener("push", event => {
 
   // The server names one meal — whichever this employee usually books.
   const bookLabel = d.action_label || (d.meals && d.meals.length ? "Order " + cap(d.meals[0]) : null);
-  const actions = bookLabel
+  // Android Chrome shows at most two action buttons (Notification.maxActions),
+  // so it's one meal plus a decline — not a full menu. Tapping the body opens
+  // the picker instead, which is the closest a web app can get to asking
+  // outright: a phone can't draw a dialog over the home screen.
+  const maxActions = (self.Notification && self.Notification.maxActions) || 2;
+  const actions = (bookLabel
     ? [{ action: "yes", title: bookLabel }, { action: "no", title: "Not today" }]
-    : [{ action: "no", title: "Not today" }];
+    : [{ action: "no", title: "Not today" }]).slice(0, maxActions);
 
   event.waitUntil(
     self.registration.showNotification(d.title || "Canteen food today?", {
@@ -83,8 +88,9 @@ self.addEventListener("notificationclick", event => {
   event.notification.close();
 
   // Body tap, or no API configured — just open the portal.
+  // Body tap — open straight onto the meal picker for the right date.
   if ((action !== "yes" && action !== "no") || !API) {
-    event.waitUntil(openApp());
+    event.waitUntil(openApp(d.date));
     return;
   }
 
@@ -126,12 +132,18 @@ self.addEventListener("notificationclick", event => {
 /* ── Helpers ────────────────────────────────────────── */
 function cap(s) { return String(s).charAt(0).toUpperCase() + String(s).slice(1); }
 
-function openApp() {
+function openApp(dateStr) {
+  const target = dateStr
+    ? "./index.html?ask=" + encodeURIComponent(dateStr)
+    : "./index.html";
   return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
     for (const c of list) {
-      if (c.url.indexOf(self.registration.scope) === 0 && "focus" in c) return c.focus();
+      if (c.url.indexOf(self.registration.scope) === 0 && "focus" in c) {
+        if (dateStr) c.postMessage({ type: "ask-meals", date: dateStr });
+        return c.focus();
+      }
     }
-    return self.clients.openWindow("./index.html");
+    return self.clients.openWindow(target);
   });
 }
 
