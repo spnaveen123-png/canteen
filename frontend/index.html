@@ -169,7 +169,11 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .meal.collected::before{content:none}
 .meal.locked{opacity:.55;cursor:default}
 .meal.locked .box{border-style:dashed}
-.meal.busy{opacity:.6;pointer-events:none}
+.meal.saving .box{animation:savepulse 1.3s ease-out infinite}
+@keyframes savepulse{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--leaf) 60%, transparent)}
+  100%{box-shadow:0 0 0 9px transparent}
+}
 .meal .token{display:inline-flex;align-items:center;gap:.3rem;font-size:.72rem;font-weight:600;
   color:var(--turmeric);background:var(--turmeric-soft);padding:.12rem .45rem;border-radius:5px;margin-top:3px}
 .usual{display:inline-block;font-size:.63rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
@@ -434,6 +438,36 @@ let offAsked = false;
 let pushMode = "off";
 let firstLoginId = null;
 let pendingAsk = null;     // date the notification wants answered
+
+/* Local intent that hasn't been confirmed by the server yet.
+   Key is "YYYY-MM-DD|meal", value is the desired on/off state. This is what
+   stops a slow /meals/... response that was issued BEFORE a tap from
+   overwriting the tap's result when it finally lands. */
+const pending = new Map();
+const inflight = new Set();
+let refreshSeq = 0;
+
+/* Bumped whenever the employee changes something. A meal list fetched BEFORE
+   a change is stale the moment it lands, even if the change has already been
+   confirmed and cleared from `pending` — that is what used to put a cancelled
+   meal's tick back on a few seconds later. */
+let mutationSeq = 0;
+
+function regSet(d) {
+  if (!regs[d]) regs[d] = new Set();
+  return regs[d];
+}
+
+/* Replay unconfirmed taps on top of a server snapshot. */
+function applyPending(d, set) {
+  pending.forEach((want, key) => {
+    const cut = key.indexOf("|");
+    if (key.slice(0, cut) !== d) return;
+    const t = key.slice(cut + 1);
+    if (want) set.add(t); else set.delete(t);
+  });
+  return set;
+}
 let localTimers = [];
 
 /* ── Helpers ────────────────────────────────────────── */
@@ -649,6 +683,8 @@ async function loadTimelines() {
 async function refresh() {
   if (!session || !API) return;
   const d = activeDate();
+  const seq = ++refreshSeq;
+  const mutAt = mutationSeq;
   render();
   try {
     const [day, m, tk] = await Promise.all([
@@ -656,6 +692,11 @@ async function refresh() {
       api("/meals/" + encodeURIComponent(session.emp_id) + "/" + d),
       api("/employee/" + encodeURIComponent(session.emp_id) + "/tokens/" + d).catch(() => ({ tokens: {} }))
     ]);
+    // Drop this response if a newer refresh has started, or if the employee
+    // changed something after it was issued. In both cases what we already
+    // have on screen is closer to the truth than this snapshot.
+    if (seq !== refreshSeq || mutAt !== mutationSeq) return;
+
     if (day && day.meals) {
       days[d] = day;
       const keys = Object.keys(day.meals);
@@ -664,9 +705,12 @@ async function refresh() {
         TYPES = keys;
       }
     }
-    regs[d] = new Set(m.registered_meals || []);
+    // Taps still in flight win over the snapshot — otherwise a response
+    // issued before the tap puts the tick straight back on.
+    regs[d] = applyPending(d, new Set(m.registered_meals || []));
     tokens[d] = tk.tokens || {};
   } catch (e) {
+    if (seq !== refreshSeq) return;
     toast("Couldn't load your meals. Check your connection.", true);
   }
   render();
@@ -815,25 +859,65 @@ function render() {
 /* ── Book / cancel one meal ─────────────────────────── */
 async function toggle(type) {
   const d = activeDate();
-  if (!regs[d]) regs[d] = new Set();
-  const set = regs[d];
-  const wasOn = set.has(type);
+  const want = !regSet(d).has(type);
+  const key = d + "|" + type;
 
-  if (wasOn) set.delete(type); else set.add(type);
+  // Paint first, always. The tick never waits on the network.
+  mutationSeq++;
+  if (want) regSet(d).add(type); else regSet(d).delete(type);
+  pending.set(key, want);
   render();
-  const row = document.querySelector('.meal[data-type="' + type + '"]');
-  if (row) row.classList.add("busy");
+
+  // Already saving this meal — the loop below will pick up the new intent.
+  if (inflight.has(key)) return;
+  inflight.add(key);
+
+  const slow = setTimeout(() => markSaving(type, true), 1200);
 
   try {
-    await api(wasOn ? "/meals/unregister" : "/meals/register",
-      { emp_id: session.emp_id, meal_date: d, meal_type: type });
-    if (!wasOn) markAnswered(d);
-    toast(wasOn ? label(type) + " cancelled" : label(type) + " ordered");
-  } catch (e) {
-    if (wasOn) set.add(type); else set.delete(type);
-    toast(e.message, true);
+    while (pending.has(key)) {
+      const desired = pending.get(key);
+      let ok = true, msg = "";
+
+      try {
+        await api(desired ? "/meals/register" : "/meals/unregister",
+          { emp_id: session.emp_id, meal_date: d, meal_type: type });
+      } catch (e) {
+        msg = e.message || "";
+        // Being already in the state we asked for is success, not failure.
+        // A double tap during a slow cold start used to land here as a 409
+        // and roll the tick back while the booking existed server-side.
+        if (desired && /already/i.test(msg)) ok = true;
+        else if (!desired && /(not found|not registered|no registration)/i.test(msg)) ok = true;
+        else ok = false;
+      }
+
+      // Tapped again while that request was out — go round with the new intent.
+      if (pending.get(key) !== desired) continue;
+      pending.delete(key);
+
+      if (ok) {
+        if (desired) markAnswered(d);
+        toast(label(type) + (desired ? " ordered" : " cancelled"));
+      } else {
+        if (desired) regSet(d).delete(type); else regSet(d).add(type);
+        toast(msg || "Couldn't save that. Try again.", true);
+      }
+    }
+  } finally {
+    clearTimeout(slow);
+    inflight.delete(key);
+    markSaving(type, false);
+    render();
   }
-  render();
+}
+
+/* Only shown if the server is slow (a cold start can take most of a minute).
+   It pulses the checkbox rather than dimming the row, so the state the
+   employee just chose stays readable the whole time. */
+function markSaving(type, on) {
+  document.querySelectorAll('#meals .meal[data-type="' + type + '"]')
+    .forEach(el => el.classList.toggle("saving", !!on));
 }
 
 /* Order from the prompt sheet, then get out of the way.
@@ -850,6 +934,7 @@ async function declineDay() {
   closeSheet();
   const d = activeDate();
   const prev = new Set(regs[d] || []);
+  mutationSeq++;
   regs[d] = new Set();
   render();
   try {

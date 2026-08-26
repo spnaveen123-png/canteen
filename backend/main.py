@@ -546,6 +546,9 @@ async def register_meal(req: MealRequest):
     allowed, msg = await check_meal_cutoff(req.meal_type, d_obj)
     if not allowed:
         raise HTTPException(403, msg)
+    # Idempotent on purpose. A double tap, or a retry after a request that
+    # actually succeeded but timed out on a cold start, must not come back as
+    # an error — the client would roll its tick back while the booking exists.
     try:
         supabase.table("meal_registrations").insert({
             "emp_id": req.emp_id,
@@ -554,7 +557,12 @@ async def register_meal(req: MealRequest):
         }).execute()
         return {"status": "success"}
     except Exception:
-        raise HTTPException(409, "Already registered")
+        existing = supabase.table("meal_registrations").select("meal_type") \
+            .eq("emp_id", req.emp_id).eq("meal_date", str(d_obj)) \
+            .eq("meal_type", req.meal_type).execute()
+        if existing.data:
+            return {"status": "already_registered"}
+        raise HTTPException(500, "Couldn't save that. Please try again.")
 
 
 @app.post("/meals/unregister")
@@ -563,6 +571,7 @@ async def unregister_meal(req: MealRequest):
     allowed, msg = await check_meal_cutoff(req.meal_type, d_obj)
     if not allowed:
         raise HTTPException(403, msg)
+    # Deleting something that isn't there is also success — same reasoning.
     supabase.table("meal_registrations").delete() \
         .eq("emp_id", req.emp_id).eq("meal_date", str(d_obj)).eq("meal_type", req.meal_type).execute()
     return {"status": "unregistered"}
