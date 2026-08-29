@@ -783,6 +783,56 @@ async def run_reminders(force: bool = False, x_reminder_secret: str = Header(def
     return send_daily_reminders(force=force)
 
 
+def push_ttl_for(target: date) -> int:
+    """
+    Expire the message when the last meal for that date closes. A phone that
+    has been offline all morning shouldn't buzz at 4 PM asking about a lunch
+    that shut at 3 — the message is worthless by then, so let it lapse.
+    """
+    cutoffs = fetch_cutoffs()
+    last = max(cutoffs.values()) if cutoffs else time(20, 30)
+    expiry = IST.localize(datetime.combine(target, last))
+    return max(300, min(int((expiry - get_ist_now()).total_seconds()), 24 * 3600))
+
+
+def send_one(sub: dict, payload: str, ttl: int):
+    """
+    Push to a single subscription. Returns (ok, detail). Never raises, and
+    surfaces the provider's actual status so failures can be diagnosed
+    instead of guessed at.
+    """
+    from pywebpush import webpush, WebPushException
+    try:
+        webpush(
+            subscription_info={
+                "endpoint": sub["endpoint"],
+                "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
+            },
+            data=payload,
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims={"sub": VAPID_SUBJECT},
+            ttl=ttl,
+        )
+        return True, "sent"
+    except WebPushException as e:
+        status = getattr(e.response, "status_code", None)
+        body = ""
+        try:
+            body = (e.response.text or "")[:200]
+        except Exception:
+            pass
+        if status in (404, 410):
+            supabase.table("push_subscriptions").delete().eq("endpoint", sub["endpoint"]).execute()
+            return False, f"gone ({status}) — subscription deleted, employee must re-enable"
+        if status in (401, 403):
+            return False, (f"rejected ({status}) — VAPID key mismatch. The browser subscribed "
+                           f"with a different public key than the server is signing with. "
+                           f"{body}")
+        return False, f"failed ({status}) {body}"
+    except Exception as e:
+        return False, f"error: {type(e).__name__}: {e}"
+
+
 def claim_round(round_date: date, hour: int) -> bool:
     """
     Only one send per (date, hour). The cron calls in several times an hour and
@@ -799,6 +849,102 @@ def claim_round(round_date: date, hour: int) -> bool:
         return False   # already claimed, or the table is missing
 
 
+@app.get("/push/diagnose")
+async def push_diagnose(x_reminder_secret: str = Header(default="")):
+    """
+    One call that answers "why did nobody get a notification?".
+    Reports config, subscriptions, and whether a round is due right now.
+    """
+    if REMINDER_SECRET and x_reminder_secret != REMINDER_SECRET:
+        raise HTTPException(401, "Bad reminder secret")
+
+    now = get_ist_now()
+    hours = reminder_hours()
+    today = now.date()
+
+    try:
+        subs = supabase.table("push_subscriptions").select("emp_id, endpoint").execute().data or []
+    except Exception as e:
+        subs = []
+        log.warning("diagnose: %s", e)
+
+    try:
+        rounds = supabase.table("reminder_rounds").select("round_hour, sent_at") \
+            .eq("round_date", str(today)).execute().data or []
+    except Exception:
+        rounds = []
+
+    try:
+        answered = supabase.table("meal_prompt_answers").select("emp_id") \
+            .eq("meal_date", str(today)).execute().data or []
+    except Exception:
+        answered = []
+
+    problems = []
+    if not VAPID_PRIVATE_KEY:
+        problems.append("VAPID_PRIVATE_KEY is not set on this service — no push can be sent.")
+    if not VAPID_PUBLIC_KEY:
+        problems.append("VAPID_PUBLIC_KEY is not set — browsers cannot subscribe.")
+    if not subs:
+        problems.append("No push subscriptions stored. Nobody has tapped 'Turn on reminders', "
+                        "or the subscribe call failed. Check the browser console on a phone.")
+    if now.hour not in hours:
+        problems.append(f"No round is due at {now.hour:02d}:00 IST. Rounds run at {hours}. "
+                        f"Use ?force=true to send now.")
+
+    return {
+        "ist_now": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "push_configured": bool(VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY),
+        "vapid_public_key_prefix": VAPID_PUBLIC_KEY[:12] + "…" if VAPID_PUBLIC_KEY else None,
+        "vapid_subject": VAPID_SUBJECT,
+        "reminder_hours": hours,
+        "round_due_now": now.hour in hours,
+        "rounds_already_sent_today": [r["round_hour"] for r in rounds],
+        "subscription_count": len(subs),
+        "subscribed_employees": sorted({r["emp_id"] for r in subs}),
+        "answered_today": len({r["emp_id"] for r in answered}),
+        "problems": problems or ["Nothing obviously wrong."],
+    }
+
+
+class TestPushRequest(BaseModel):
+    emp_id: str
+
+
+@app.post("/push/test")
+async def push_test(req: TestPushRequest, x_reminder_secret: str = Header(default="")):
+    """
+    Send one notification to every device belonging to an employee, right now,
+    ignoring rounds and answers. Returns the provider's response per device so
+    a failure names itself instead of disappearing into a log.
+    """
+    if REMINDER_SECRET and x_reminder_secret != REMINDER_SECRET:
+        raise HTTPException(401, "Bad reminder secret")
+    if not VAPID_PRIVATE_KEY:
+        raise HTTPException(503, "VAPID_PRIVATE_KEY is not set on this service.")
+
+    subs = supabase.table("push_subscriptions") \
+        .select("emp_id, endpoint, p256dh, auth").eq("emp_id", req.emp_id).execute().data or []
+    if not subs:
+        return {"sent": 0, "results": [],
+                "hint": f"No subscription stored for {req.emp_id}. Open the portal on the "
+                        f"phone, sign in as that employee, and tap 'Turn on reminders'."}
+
+    payload = json.dumps({
+        "title": "Canteen test",
+        "body": "If you can see this, reminders are working.",
+        "emp_id": req.emp_id,
+        "date": str(get_ist_now().date()),
+        "meals": [],
+    })
+
+    results = []
+    for sub in subs:
+        ok, detail = send_one(sub, payload, 300)
+        results.append({"endpoint": sub["endpoint"][:60] + "…", "ok": ok, "detail": detail})
+    return {"sent": sum(1 for r in results if r["ok"]), "results": results}
+
+
 def send_daily_reminders(force: bool = False):
     """
     Ask everyone who hasn't answered yet.
@@ -813,10 +959,9 @@ def send_daily_reminders(force: bool = False):
         log.warning("Reminders skipped: VAPID_PRIVATE_KEY not set")
         return {"sent": 0, "reason": "push not configured"}
 
-    from pywebpush import webpush, WebPushException
-
     now = get_ist_now()
     hour = now.hour
+    attempted_failures = 0
 
     hours = reminder_hours()
     if not force:
@@ -900,33 +1045,31 @@ def send_daily_reminders(force: bool = False):
             "meals": offer,
             "action_label": action_label,
         })
-        try:
-            webpush(
-                subscription_info={
-                    "endpoint": s["endpoint"],
-                    "keys": {"p256dh": s["p256dh"], "auth": s["auth"]},
-                },
-                data=payload,
-                vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": VAPID_SUBJECT},
-                ttl=6 * 3600,
-            )
+        ok, detail = send_one(s, payload, push_ttl_for(target))
+        if ok:
             sent += 1
-        except WebPushException as e:
-            status = getattr(e.response, "status_code", None)
-            if status in (404, 410):
-                supabase.table("push_subscriptions").delete().eq("endpoint", s["endpoint"]).execute()
-                dropped += 1
-            else:
-                log.warning("Push failed for %s: %s", emp, e)
-        except Exception as e:
-            log.warning("Push error for %s: %s", emp, e)
+        elif "gone" in detail:
+            dropped += 1
+        else:
+            attempted_failures += 1
+            log.warning("Push failed for %s: %s", emp, detail)
 
-    log.info("Round %02d:00 for %s — sent=%s off=%s dropped=%s meals=%s",
-             hour, target, sent, skipped_off, dropped, meals)
-    return {"sent": sent, "dropped": dropped, "weekly_off_skipped": skipped_off,
-            "meals": meals, "date": str(target), "round_hour": hour,
-            "reminder_hours": hours}
+    # If every attempt failed, give the round back so the next cron call can
+    # retry. Otherwise a transient outage silently burns the whole round.
+    if not force and sent == 0 and attempted_failures > 0:
+        try:
+            supabase.table("reminder_rounds").delete() \
+                .eq("round_date", str(now.date())).eq("round_hour", hour).execute()
+            log.warning("Round %02d:00 released for retry — all %s sends failed",
+                        hour, attempted_failures)
+        except Exception:
+            pass
+
+    log.info("Round %02d:00 for %s — sent=%s off=%s dropped=%s failed=%s meals=%s",
+             hour, target, sent, skipped_off, dropped, attempted_failures, meals)
+    return {"sent": sent, "dropped": dropped, "failed": attempted_failures,
+            "weekly_off_skipped": skipped_off, "meals": meals, "date": str(target),
+            "round_hour": hour, "reminder_hours": hours}
 
 
 # ── Dynamic date route — MUST stay last ───────────────────────────────────────

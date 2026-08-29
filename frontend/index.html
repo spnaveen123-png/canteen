@@ -326,6 +326,7 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
         </div>
       </div>
       <button class="btn btn-primary btn-sm" id="remBtn" style="width:100%;margin-top:1rem" onclick="enableReminders()">Turn on reminders</button>
+      <button class="btn btn-quiet" id="remTest" style="width:100%;display:none" onclick="testNotification()">Send a test notification</button>
     </div>
 
     <div style="display:flex;flex-direction:column;align-items:center;gap:.2rem;margin-top:.2rem">
@@ -436,6 +437,7 @@ let usualMeal = null;
 let weeklyOff = null;      // 0=Mon … 6=Sun, or null
 let offAsked = false;
 let pushMode = "off";
+let lastPushError = null;
 let firstLoginId = null;
 let pendingAsk = null;     // date the notification wants answered
 
@@ -1089,14 +1091,48 @@ async function subscribePush(reg) {
   try {
     const { key } = await api("/push/public-key");
     if (!key) return false;
+
     let sub = await reg.pushManager.getSubscription();
-    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+
+    /* A subscription is bound to the VAPID key it was created with. If the
+       server's key has changed since — new keys generated, or the first
+       subscribe happened before the keys were configured — every push to this
+       device is rejected with 403 and nothing ever arrives. The browser gives
+       no hint; it just goes quiet. So compare and re-subscribe on a mismatch. */
+    if (sub) {
+      let existing = null;
+      try {
+        const raw = sub.options && sub.options.applicationServerKey;
+        if (raw) existing = bytesToB64(raw);
+      } catch (_) {}
+      if (existing && existing !== key) {
+        try { await sub.unsubscribe(); } catch (_) {}
+        sub = null;
+      }
+    }
+
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true, applicationServerKey: b64ToBytes(key)
+      });
+    }
+
     const j = sub.toJSON();
     await api("/push/subscribe", {
       emp_id: session.emp_id, endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth
     });
     return true;
-  } catch (_) { return false; }
+  } catch (e) {
+    lastPushError = (e && e.message) || String(e);
+    return false;
+  }
+}
+
+function bytesToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function b64ToBytes(base64) {
@@ -1141,20 +1177,25 @@ function renderReminders() {
     title.textContent = "Reminders are on";
     body.textContent = "We'll ask whether you want canteen food. Order your usual meal straight from the notification — no need to open the app.";
     btn.style.display = "none";
+    $("remTest").style.display = "flex";
   } else if (pushMode === "local") {
     title.textContent = "Reminders on this device";
+    $("remTest").style.display = "none";
     body.textContent = "You'll be asked while the portal is open. Add Canteen to your home screen so reminders keep working in the background.";
     btn.style.display = "none";
   } else if (pushMode === "denied") {
     title.textContent = "Notifications are blocked";
+    $("remTest").style.display = "none";
     body.textContent = "Open your browser's site settings for this page, allow notifications, then reload.";
     btn.style.display = "none";
   } else if (pushMode === "unsupported") {
     title.textContent = "Reminders aren't available here";
+    $("remTest").style.display = "none";
     body.textContent = "Open the portal in Chrome on Android to get daily reminders.";
     btn.style.display = "none";
   } else {
     title.textContent = "Daily reminders";
+    $("remTest").style.display = "none";
     body.textContent = "Get a notification asking whether you want canteen food. Order your meal right from the notification.";
     btn.style.display = "flex";
   }
@@ -1165,6 +1206,25 @@ function renderReminders() {
    tomorrow's answer — not today's. Ordering today's dinner must not grey out
    the round that collects tomorrow's count. */
 function lastRoundHour() { return Math.max.apply(null, PROMPT_HOURS); }
+
+/* Proves the whole chain from this phone: permission, service worker,
+   subscription, and the browser's own push display. If this works but the
+   6 AM round doesn't, the problem is the cron or the server, not the phone. */
+async function testNotification() {
+  if (Notification.permission !== "granted") return toast("Turn on reminders first.", true);
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification("Canteen test", {
+      body: "Notifications are working on this phone.",
+      icon: "icon-192.png", badge: "icon-192.png", tag: "canteen-test"
+    });
+    toast(pushMode === "server"
+      ? "Shown. Ask IT to run the server-side test too."
+      : "Shown on this device only — server push isn't set up yet.");
+  } catch (e) {
+    toast("Couldn't show it: " + ((e && e.message) || e), true);
+  }
+}
 
 function renderReminderTimes() {
   const today = istDate(0), tom = istDate(1);
