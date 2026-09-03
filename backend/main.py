@@ -29,7 +29,29 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 VAPID_PUBLIC_KEY  = os.getenv("VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
-VAPID_SUBJECT     = os.getenv("VAPID_SUBJECT", "mailto:canteen@example.com")
+def _normalise_vapid_subject(raw: str) -> str:
+    """
+    py-vapid demands a mailto: or https:// URL and rejects anything else with
+    "Missing 'sub' from claims" — the same message it gives for a blank value,
+    which makes a missing mailto: prefix look like a missing variable. Accept
+    a bare email address and fix it up rather than failing every push.
+    """
+    v = (raw or "").strip()
+    if not v:
+        return ""
+    if v.startswith("mailto:") or v.startswith("https://"):
+        return v
+    if "@" in v and " " not in v:
+        return "mailto:" + v
+    return ""
+
+
+VAPID_SUBJECT_RAW = os.getenv("VAPID_SUBJECT", "")
+VAPID_SUBJECT     = _normalise_vapid_subject(VAPID_SUBJECT_RAW)
+if VAPID_SUBJECT_RAW.strip() and VAPID_SUBJECT != VAPID_SUBJECT_RAW.strip():
+    logging.getLogger("canteen").warning(
+        "VAPID_SUBJECT %r is not a mailto: link; using %r",
+        VAPID_SUBJECT_RAW, VAPID_SUBJECT or "(nothing — push will fail)")
 REMINDER_SECRET   = os.getenv("REMINDER_SECRET", "")
 ENABLE_SCHEDULER  = os.getenv("ENABLE_SCHEDULER", "1") == "1"
 
@@ -405,6 +427,7 @@ async def health_check():
             "database": "connected",
             "push": bool(VAPID_PRIVATE_KEY),
             "keepalive": bool(KEEPALIVE_URL),
+            "vapid_subject_valid": bool(VAPID_SUBJECT),
             "reminder_hours": reminder_hours(),
             "timestamp": get_ist_now().isoformat(),
         }
@@ -885,6 +908,11 @@ async def push_diagnose(x_reminder_secret: str = Header(default="")):
         problems.append("VAPID_PRIVATE_KEY is not set on this service — no push can be sent.")
     if not VAPID_PUBLIC_KEY:
         problems.append("VAPID_PUBLIC_KEY is not set — browsers cannot subscribe.")
+    if not VAPID_SUBJECT:
+        problems.append(
+            f"VAPID_SUBJECT is missing or invalid (raw value: {VAPID_SUBJECT_RAW!r}). "
+            f"It must be a mailto: link, e.g. mailto:canteen@gcpl.live. Every push "
+            f"fails with \"Missing 'sub' from claims\" until this is set.")
     if not subs:
         problems.append("No push subscriptions stored. Nobody has tapped 'Turn on reminders', "
                         "or the subscribe call failed. Check the browser console on a phone.")
@@ -922,6 +950,11 @@ async def push_test(req: TestPushRequest, x_reminder_secret: str = Header(defaul
         raise HTTPException(401, "Bad reminder secret")
     if not VAPID_PRIVATE_KEY:
         raise HTTPException(503, "VAPID_PRIVATE_KEY is not set on this service.")
+    if not VAPID_SUBJECT:
+        raise HTTPException(
+            503,
+            f"VAPID_SUBJECT is missing or invalid (raw value: {VAPID_SUBJECT_RAW!r}). "
+            f"Set it to a mailto: link such as mailto:canteen@gcpl.live and redeploy.")
 
     subs = supabase.table("push_subscriptions") \
         .select("emp_id, endpoint, p256dh, auth").eq("emp_id", req.emp_id).execute().data or []
@@ -958,6 +991,9 @@ def send_daily_reminders(force: bool = False):
     if not VAPID_PRIVATE_KEY:
         log.warning("Reminders skipped: VAPID_PRIVATE_KEY not set")
         return {"sent": 0, "reason": "push not configured"}
+    if not VAPID_SUBJECT:
+        log.warning("Reminders skipped: VAPID_SUBJECT missing or not a mailto: link")
+        return {"sent": 0, "reason": "VAPID_SUBJECT must be a mailto: link"}
 
     now = get_ist_now()
     hour = now.hour
