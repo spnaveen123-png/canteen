@@ -111,6 +111,37 @@ Prefer a hosted monitor? cron-job.org and UptimeRobot both work — point them a
 
 ---
 
+## Reminders that arrive "sometimes"
+
+Two causes, both fixed. Run `sql/fix-intermittent-notifications.sql`, then redeploy the Web Service.
+
+### 1. Android was holding the notifications (the main one)
+
+Pushes were sent without an `Urgency` header, so they defaulted to **normal** priority. Android holds normal-priority messages while the phone is in Doze and releases them at the next maintenance window — which may be hours later, or not until the screen is next unlocked. A 6 AM reminder lands in the deepest Doze of the night, which is exactly why delivery looked random: it worked when someone happened to be using their phone and didn't when they weren't.
+
+Every push now sends `Urgency: high`, which wakes the device. Also added is a `Topic` header, so if a 6 AM message is still queued when 8 AM fires, the phone shows the later one instead of two notifications about the same day.
+
+### 2. A round could be marked done without sending anything
+
+`claim_round()` inserted the "this round has gone out" row *before* delivery. If that request then died — a cold start that outran the cron's timeout, a Render restart mid-send — the row remained and every later cron call skipped it. The round was lost for the day, silently.
+
+The claim is now provisional: `sent_count` stays NULL until delivery finishes. A claim older than five minutes with a NULL count is treated as abandoned and retried by the next cron call. A round that genuinely delivered is never resent.
+
+### Checking it
+
+`reminder_rounds.sent_count` now records how many devices each round reached:
+
+```sql
+select round_date, round_hour, sent_count
+from reminder_rounds
+where round_date > current_date - 7
+order by round_date desc, round_hour;
+```
+
+A round far below its neighbours means devices are dropping off (stale subscriptions), not a scheduling fault. NULL on an old row means it was claimed and never completed.
+
+---
+
 ## Notifications not arriving — work through this
 
 ### Does the phone get a notification if it was offline?

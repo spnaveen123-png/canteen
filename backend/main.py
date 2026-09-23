@@ -806,6 +806,26 @@ async def run_reminders(force: bool = False, x_reminder_secret: str = Header(def
     return send_daily_reminders(force=force)
 
 
+def push_headers(topic: Optional[str] = None) -> dict:
+    """
+    Urgency is the difference between a reminder that arrives and one that
+    doesn't. Without this header the message defaults to 'normal', and Android
+    holds normal-priority pushes while the phone is in Doze — releasing them
+    at the next maintenance window, which may be hours later or after the
+    screen is next unlocked. A 6 AM reminder hits the deepest Doze of the
+    night, which is why delivery looked random.
+
+    Topic collapses superseded messages: if the 6 AM round is still queued
+    when the 8 AM one is sent, the phone gets the later one only instead of
+    two notifications about the same day.
+    """
+    h = {"Urgency": "high"}
+    if topic:
+        # Must be <=32 chars from the URL-safe base64 alphabet.
+        h["Topic"] = topic[:32]
+    return h
+
+
 def push_ttl_for(target: date) -> int:
     """
     Expire the message when the last meal for that date closes. A phone that
@@ -818,7 +838,7 @@ def push_ttl_for(target: date) -> int:
     return max(300, min(int((expiry - get_ist_now()).total_seconds()), 24 * 3600))
 
 
-def send_one(sub: dict, payload: str, ttl: int):
+def send_one(sub: dict, payload: str, ttl: int, topic: Optional[str] = None):
     """
     Push to a single subscription. Returns (ok, detail). Never raises, and
     surfaces the provider's actual status so failures can be diagnosed
@@ -835,6 +855,7 @@ def send_one(sub: dict, payload: str, ttl: int):
             vapid_private_key=VAPID_PRIVATE_KEY,
             vapid_claims={"sub": VAPID_SUBJECT},
             ttl=ttl,
+            headers=push_headers(topic),
         )
         return True, "sent"
     except WebPushException as e:
@@ -856,20 +877,72 @@ def send_one(sub: dict, payload: str, ttl: int):
         return False, f"error: {type(e).__name__}: {e}"
 
 
+CLAIM_STALE_SECONDS = 300
+
+
+def _parse_ts(value):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 def claim_round(round_date: date, hour: int) -> bool:
     """
-    Only one send per (date, hour). The cron calls in several times an hour and
-    the in-process sweep may overlap it; this makes a duplicate a no-op rather
-    than a second buzz in someone's pocket.
+    One delivery per (date, hour) — the cron calls in twice an hour and the
+    in-process sweep runs hourly, so a duplicate must be a no-op rather than a
+    second buzz in someone's pocket.
+
+    The claim is provisional. sent_count stays NULL until delivery finishes,
+    so a round that was claimed and then died — a cold start that timed out, a
+    Render restart mid-request — is retried by the next call instead of being
+    silently lost for the day. That is the difference between "reminders are
+    unreliable" and "reminders work".
     """
+    now = get_ist_now()
     try:
         supabase.table("reminder_rounds").insert(
             {"round_date": str(round_date), "round_hour": hour,
-             "sent_at": get_ist_now().isoformat()}
+             "sent_at": now.isoformat(), "sent_count": None}
         ).execute()
         return True
     except Exception:
-        return False   # already claimed, or the table is missing
+        pass
+
+    try:
+        res = supabase.table("reminder_rounds").select("sent_count, sent_at") \
+            .eq("round_date", str(round_date)).eq("round_hour", hour).execute()
+    except Exception:
+        return False
+    if not res.data:
+        return False
+
+    row = res.data[0]
+    if row.get("sent_count") is not None:
+        return False                      # genuinely delivered already
+
+    started = _parse_ts(row.get("sent_at"))
+    if started and (now - started).total_seconds() < CLAIM_STALE_SECONDS:
+        return False                      # another call is mid-flight right now
+
+    # Abandoned claim — take it over.
+    try:
+        supabase.table("reminder_rounds").update({"sent_at": now.isoformat()}) \
+            .eq("round_date", str(round_date)).eq("round_hour", hour).execute()
+        log.warning("Round %02d:00 on %s was claimed but never delivered — retrying",
+                    hour, round_date)
+        return True
+    except Exception:
+        return False
+
+
+def finish_round(round_date: date, hour: int, sent: int):
+    """Mark the round delivered so later calls stop retrying it."""
+    try:
+        supabase.table("reminder_rounds").update({"sent_count": sent}) \
+            .eq("round_date", str(round_date)).eq("round_hour", hour).execute()
+    except Exception as e:
+        log.warning("Could not close round %02d:00: %s", hour, e)
 
 
 @app.get("/push/diagnose")
@@ -973,7 +1046,7 @@ async def push_test(req: TestPushRequest, x_reminder_secret: str = Header(defaul
 
     results = []
     for sub in subs:
-        ok, detail = send_one(sub, payload, 300)
+        ok, detail = send_one(sub, payload, 300, topic="canteentest")
         results.append({"endpoint": sub["endpoint"][:60] + "…", "ok": ok, "detail": detail})
     return {"sent": sum(1 for r in results if r["ok"]), "results": results}
 
@@ -1081,7 +1154,8 @@ def send_daily_reminders(force: bool = False):
             "meals": offer,
             "action_label": action_label,
         })
-        ok, detail = send_one(s, payload, push_ttl_for(target))
+        ok, detail = send_one(s, payload, push_ttl_for(target),
+                              topic="c%s%02d" % (target.strftime("%y%m%d"), hour))
         if ok:
             sent += 1
         elif "gone" in detail:
@@ -1090,16 +1164,19 @@ def send_daily_reminders(force: bool = False):
             attempted_failures += 1
             log.warning("Push failed for %s: %s", emp, detail)
 
-    # If every attempt failed, give the round back so the next cron call can
-    # retry. Otherwise a transient outage silently burns the whole round.
-    if not force and sent == 0 and attempted_failures > 0:
-        try:
-            supabase.table("reminder_rounds").delete() \
-                .eq("round_date", str(now.date())).eq("round_hour", hour).execute()
-            log.warning("Round %02d:00 released for retry — all %s sends failed",
-                        hour, attempted_failures)
-        except Exception:
-            pass
+    if not force:
+        if sent == 0 and attempted_failures > 0:
+            # Every send failed — release the claim entirely so the next cron
+            # call starts fresh rather than treating this as done.
+            try:
+                supabase.table("reminder_rounds").delete() \
+                    .eq("round_date", str(now.date())).eq("round_hour", hour).execute()
+                log.warning("Round %02d:00 released for retry — all %s sends failed",
+                            hour, attempted_failures)
+            except Exception:
+                pass
+        else:
+            finish_round(now.date(), hour, sent)
 
     log.info("Round %02d:00 for %s — sent=%s off=%s dropped=%s failed=%s meals=%s",
              hour, target, sent, skipped_off, dropped, attempted_failures, meals)
