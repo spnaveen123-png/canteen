@@ -1,4 +1,4 @@
-# Canteen Portal — setup Update
+# Canteen Portal — setup
 
 ---
 
@@ -86,7 +86,11 @@ Five runs a day instead of 102. One of them fired at 18:31 UTC — an hour outsi
 
 GitHub's documentation says scheduled workflows may be delayed during periods of high load. In practice, high-frequency schedules on free runners are heavily throttled. **And none of those six runs landed on a reminder hour, so no reminder round fired at all across two days.** That, more than anything else, is why notifications were arriving "sometimes".
 
-The workflow is now hourly and is a **backup only**.
+This is documented behaviour, not a fault in the repository. GitHub's own troubleshooting page says the schedule event can be delayed during high load, that high load includes the start of every hour, and that **queued jobs may be dropped** if load is high enough. Community reports of a `*/5` schedule firing every 40–90 minutes, or a daily job landing 8–14 hours late, are routine.
+
+The workflow is now hourly at **minute 37** — deliberately not 0 or 5, since the top of the hour is where every naive cron expression clusters and is the worst slot to pick. It is a **backup only**.
+
+Three things that genuinely do stop scheduled workflows, worth ruling out if runs ever go to zero: the workflow must be on the **default branch**, scheduled workflows are **disabled by default on forks**, and GitHub **disables them after 60 days with no commits** to the repository.
 
 ### Use an uptime monitor instead
 

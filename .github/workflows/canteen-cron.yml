@@ -30,7 +30,12 @@ on:
     #
     # The real schedule belongs in an uptime monitor hitting the API every
     # 10 minutes — see "Keeping Render awake" in SETUP.md.
-    - cron: "5 * * * *"
+    #
+    # Minute 37, not 0 or 5. GitHub's own docs: "High load times include the
+    # start of every hour... To decrease the chance of delay, schedule your
+    # workflow to run at a different time of the hour." Everyone writes
+    # "0 * * * *", so the top of the hour is the worst slot to pick.
+    - cron: "37 * * * *"
   workflow_dispatch:
     inputs:
       force:
