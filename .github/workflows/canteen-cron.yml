@@ -21,9 +21,12 @@ name: Canteen keep-warm and reminders
 
 on:
   schedule:
-    # Every 30 min, 00:00–17:00 UTC = 05:30–22:30 IST.
-    # Widen only if you move a reminder outside those hours.
-    - cron: "0,30 0-17 * * *"
+    # Every 10 min, 00:00–17:00 UTC = 05:30–22:30 IST.
+    # MUST be under 15 minutes: Render's free tier spins the service down
+    # after 15 minutes with no inbound request, and the cold start that
+    # follows takes most of a minute. At 30 minutes the service was asleep
+    # for half of every cycle.
+    - cron: "*/10 0-17 * * *"
   workflow_dispatch:
     inputs:
       force:

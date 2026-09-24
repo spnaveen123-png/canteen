@@ -130,6 +130,20 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .daygrid button.on{background:var(--leaf);border-color:var(--leaf);color:var(--on-leaf)}
 .daygrid button:active{transform:scale(.97)}
 
+.prefblock{margin-bottom:1.3rem}
+.prefhint{font-size:.78rem;color:var(--ink2);margin:.25rem 0 .6rem;line-height:1.4}
+.hourgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.hourgrid button{background:var(--sunk);border:1px solid var(--line);border-radius:10px;
+  padding:.6rem .2rem;font-size:.8rem;font-weight:600;cursor:pointer;font-variant-numeric:tabular-nums}
+.hourgrid button.on{background:var(--leaf);border-color:var(--leaf);color:var(--on-leaf)}
+
+.bwish{display:flex;align-items:center;gap:.7rem;background:var(--card);border:1px solid var(--line);
+  border-radius:11px;padding:.6rem .7rem}
+.bwish .who2{flex:1;font-weight:600;font-size:.92rem}
+.bwish button{background:var(--turmeric);color:#fff;border:none;border-radius:8px;
+  padding:.45rem .8rem;font-size:.8rem;font-weight:600;cursor:pointer}
+.bwish button:disabled{background:var(--sunk);color:var(--ink2);cursor:default}
+
 .offnote{display:flex;align-items:flex-start;gap:.55rem;background:var(--turmeric-soft);color:var(--turmeric);
   border-radius:10px;padding:.6rem .75rem;font-size:.79rem;line-height:1.4;margin-top:.9rem;font-weight:500}
 
@@ -316,6 +330,19 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
       </div>
     </div>
 
+    <!-- Birthdays -->
+    <div class="card pad" id="bdayCard" style="display:none">
+      <div class="rem">
+        <div class="bell" id="bdayIcon" style="background:var(--turmeric-soft);color:var(--turmeric)">🎂</div>
+        <div style="flex:1">
+          <h3 id="bdayTitle">Birthdays today</h3>
+          <p id="bdaySub"></p>
+        </div>
+      </div>
+      <div id="bdayList" style="display:flex;flex-direction:column;gap:8px;margin-top:.9rem"></div>
+      <div id="bdayMine" style="display:none;margin-top:.9rem"></div>
+    </div>
+
     <div class="card pad" id="remCard">
       <div class="rem">
         <div class="bell" id="remIcon"></div>
@@ -327,6 +354,11 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
       </div>
       <button class="btn btn-primary btn-sm" id="remBtn" style="width:100%;margin-top:1rem" onclick="enableReminders()">Turn on reminders</button>
       <button class="btn btn-quiet" id="remTest" style="width:100%;display:none" onclick="testNotification()">Send a test notification</button>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-line btn-sm" style="flex:1" onclick="openPrefs()">Settings</button>
+      <button class="btn btn-line btn-sm" style="flex:1" onclick="openFeedback()">Feedback</button>
     </div>
 
     <div style="display:flex;flex-direction:column;align-items:center;gap:.2rem;margin-top:.2rem">
@@ -345,6 +377,63 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
     <p id="shSub">Tap the meal you want.</p>
     <div class="meals" id="sheetMeals" style="margin-top:0"></div>
     <button class="btn btn-quiet" style="margin-top:.9rem" onclick="declineDay()">Not ordering — bringing my own</button>
+  </div>
+</div>
+
+<div class="scrim" id="prefScrim" onclick="if(event.target===this)closeSheetById('prefScrim')">
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="grip"></div>
+    <h2 class="display">Your settings</h2>
+
+    <div class="prefblock">
+      <div class="eyebrow">Remind me at</div>
+      <p class="prefhint">Pick the times that suit your shift. Leave all off to use the canteen's default.</p>
+      <div class="hourgrid" id="hourGrid"></div>
+    </div>
+
+    <div class="prefblock">
+      <div class="eyebrow">My usual meal</div>
+      <p class="prefhint">The notification offers this one, so ordering is a single tap.</p>
+      <div class="daygrid" id="prefMeals"></div>
+    </div>
+
+    <div class="prefblock">
+      <div class="eyebrow">Weekly off</div>
+      <p class="prefhint">No reminders that day. You can still order if you come in.</p>
+      <div class="daygrid" id="prefOff"></div>
+    </div>
+
+    <div class="prefblock">
+      <div class="eyebrow">Birthday</div>
+      <p class="prefhint">Show your name to colleagues on your birthday so they can wish you. Your date of birth and age are never shown.</p>
+      <div class="daygrid" style="grid-template-columns:1fr 1fr">
+        <button id="bdayYes" onclick="setBirthdayVisible(true)">Show me</button>
+        <button id="bdayNo"  onclick="setBirthdayVisible(false)">Keep private</button>
+      </div>
+    </div>
+
+    <button class="btn btn-quiet" style="margin-top:1rem" onclick="closeSheetById('prefScrim')">Done</button>
+  </div>
+</div>
+
+<div class="scrim" id="fbScrim" onclick="if(event.target===this)closeSheetById('fbScrim')">
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="grip"></div>
+    <h2 class="display">Tell the canteen</h2>
+    <p>Suggestions, a problem with the food, or a question — it goes straight to the canteen team.</p>
+    <div class="daygrid" id="fbCats" style="grid-template-columns:1fr 1fr"></div>
+    <div class="field" style="margin-top:.9rem">
+      <textarea id="fbMsg" rows="4" placeholder="What would you like to say?"
+                style="background:var(--sunk);border:1px solid var(--line);border-radius:10px;
+                       padding:.8rem .85rem;font-size:1rem;width:100%;resize:vertical;
+                       font-family:inherit;color:inherit"></textarea>
+    </div>
+    <label class="check" style="margin-top:.6rem">
+      <input type="checkbox" id="fbAnon" /> Send without my name
+    </label>
+    <div class="alert" id="fbAlert"></div>
+    <button class="btn btn-primary" id="fbBtn" style="margin-top:.9rem" onclick="submitFeedback()">Send</button>
+    <button class="btn btn-quiet" onclick="closeSheetById('fbScrim')">Cancel</button>
   </div>
 </div>
 
@@ -435,6 +524,11 @@ let tokens = {};
 let answered = {};
 let usualMeal = null;
 let weeklyOff = null;      // 0=Mon … 6=Sun, or null
+let myHours = [];          // empty = follow the plant default
+let preferredMeal = null;
+let birthdayVisible = null;
+let birthdayAsked = false;
+let fbCategory = "suggestion";
 let offAsked = false;
 let pushMode = "off";
 let lastPushError = null;
@@ -644,10 +738,17 @@ async function start(emp_id, name) {
   api("/employee/" + encodeURIComponent(emp_id) + "/settings").then(d => {
     weeklyOff = (d && typeof d.weekly_off === "number") ? d.weekly_off : null;
     offAsked = !!(d && d.asked);
+    myHours = (d && d.reminder_hours) || [];
+    preferredMeal = (d && d.preferred_meal) || null;
+    birthdayVisible = (d && typeof d.birthday_visible === "boolean") ? d.birthday_visible : null;
+    birthdayAsked = !!(d && d.birthday_asked);
+    if (myHours.length) { PROMPT_HOURS = myHours; renderReminderTimes(); }
     renderOffChip();
     renderDayTabs();
     render();
   }).catch(() => {});
+
+  loadBirthdays();
 
   api("/employee/" + encodeURIComponent(emp_id) + "/usual-meal")
     .then(d => { usualMeal = d.meal_type || null; render(); })
@@ -1002,6 +1103,193 @@ function openSheet(which) {
   sessionStorage.setItem("canteen_sheet_" + d, "1");
 }
 function closeSheet() { $("scrim").classList.remove("show"); }
+
+/* ── Preferences ─────────────────────────────────────────────── */
+const PICKABLE_HOURS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 21];
+
+function clock(h) { return (h % 12 || 12) + (h < 12 ? " AM" : " PM"); }
+
+function openPrefs() {
+  renderPrefs();
+  $("prefScrim").classList.add("show");
+}
+function closeSheetById(id) { $(id).classList.remove("show"); }
+
+function renderPrefs() {
+  $("hourGrid").innerHTML = PICKABLE_HOURS.map(h =>
+    '<button class="' + (myHours.indexOf(h) >= 0 ? "on" : "") + '" onclick="toggleHour(' + h + ')">' +
+      clock(h) + "</button>").join("");
+
+  $("prefMeals").innerHTML = TYPES.map(t =>
+    '<button class="' + (preferredMeal === t ? "on" : "") + '" onclick="setPreferredMeal(\'' + t + '\')">' +
+      label(t) + "</button>").join("");
+
+  $("prefOff").innerHTML = DAY_SHORT.map((n, i) =>
+    '<button class="' + (weeklyOff === i ? "on" : "") + '" onclick="saveWeeklyOff(' + i + ')">' +
+      n + "</button>").join("") +
+    '<button class="' + (weeklyOff === null && offAsked ? "on" : "") + '" onclick="saveWeeklyOff(null)">None</button>';
+
+  $("bdayYes").className = birthdayVisible === true ? "on" : "";
+  $("bdayNo").className = birthdayVisible === false ? "on" : "";
+}
+
+async function savePrefs(patch, undo) {
+  try {
+    const d = await api("/employee/" + encodeURIComponent(session.emp_id) + "/settings", patch);
+    myHours = d.reminder_hours || [];
+    preferredMeal = d.preferred_meal || null;
+    weeklyOff = (typeof d.weekly_off === "number") ? d.weekly_off : null;
+    offAsked = !!d.asked;
+    birthdayVisible = (typeof d.birthday_visible === "boolean") ? d.birthday_visible : null;
+    birthdayAsked = !!d.birthday_asked;
+    PROMPT_HOURS = myHours.length ? myHours : (d.default_reminder_hours || PROMPT_HOURS);
+    renderPrefs(); renderOffChip(); renderDayTabs(); renderReminderTimes(); render();
+    return true;
+  } catch (e) {
+    if (undo) undo();
+    renderPrefs();
+    toast(e.message, true);
+    return false;
+  }
+}
+
+function toggleHour(h) {
+  const before = myHours.slice();
+  const i = myHours.indexOf(h);
+  if (i >= 0) myHours.splice(i, 1);
+  else {
+    if (myHours.length >= 4) return toast("Four reminder times is the maximum.", true);
+    myHours.push(h);
+  }
+  myHours.sort((a, b) => a - b);
+  renderPrefs();
+  savePrefs({ reminder_hours: myHours }, () => { myHours = before; });
+}
+
+function setPreferredMeal(t) {
+  const before = preferredMeal;
+  preferredMeal = (preferredMeal === t) ? null : t;
+  renderPrefs();
+  savePrefs({ preferred_meal: preferredMeal }, () => { preferredMeal = before; });
+}
+
+async function setBirthdayVisible(v) {
+  const before = birthdayVisible;
+  birthdayVisible = v;
+  renderPrefs();
+  if (await savePrefs({ birthday_visible: v }, () => { birthdayVisible = before; })) {
+    toast(v ? "Colleagues can wish you on your birthday" : "Your birthday stays private");
+    loadBirthdays();
+  }
+}
+
+/* ── Feedback ────────────────────────────────────────────────── */
+const FB_CATS = [
+  ["suggestion", "Suggestion"], ["food_quality", "Food quality"],
+  ["quantity", "Quantity"], ["hygiene", "Hygiene"],
+  ["query", "Question"], ["other", "Something else"]
+];
+
+function openFeedback() {
+  fbCategory = "suggestion";
+  $("fbMsg").value = "";
+  $("fbAnon").checked = false;
+  $("fbCats").innerHTML = FB_CATS.map(c =>
+    '<button class="' + (fbCategory === c[0] ? "on" : "") + '" onclick="setFbCat(\'' + c[0] + '\')">' +
+      c[1] + "</button>").join("");
+  $("fbScrim").classList.add("show");
+}
+function setFbCat(c) {
+  fbCategory = c;
+  document.querySelectorAll("#fbCats button").forEach((b, i) =>
+    b.classList.toggle("on", FB_CATS[i][0] === c));
+}
+
+async function submitFeedback() {
+  const msg = $("fbMsg").value.trim();
+  if (msg.length < 3) return alertBox("fbAlert", "Please write a little more.");
+  const anon = $("fbAnon").checked;
+  busy("fbBtn", true, "Sending…");
+  try {
+    await api("/feedback", {
+      emp_id: anon ? null : session.emp_id,
+      category: fbCategory, message: msg, anonymous: anon
+    });
+    closeSheetById("fbScrim");
+    toast(anon ? "Sent without your name" : "Sent — thank you");
+  } catch (e) {
+    alertBox("fbAlert", e.message);
+  } finally { busy("fbBtn", false); }
+}
+
+/* ── Birthdays ───────────────────────────────────────────────── */
+let birthdays = [], alreadyWished = [], myWishes = 0;
+
+async function loadBirthdays() {
+  if (!API || !session) return;
+  try {
+    const d = await api("/birthdays/today?emp_id=" + encodeURIComponent(session.emp_id));
+    birthdays = d.birthdays || [];
+    alreadyWished = d.wished || [];
+    if (d.is_my_birthday) {
+      const w = await api("/employee/" + encodeURIComponent(session.emp_id) + "/wishes").catch(() => null);
+      myWishes = w ? w.count : 0;
+      renderBirthdays(true, w ? w.wishes : []);
+      return;
+    }
+    renderBirthdays(false, []);
+  } catch (_) {
+    $("bdayCard").style.display = "none";
+  }
+}
+
+function renderBirthdays(mine, wishes) {
+  const card = $("bdayCard");
+  if (!mine && !birthdays.length) { card.style.display = "none"; return; }
+  card.style.display = "block";
+
+  if (mine) {
+    $("bdayTitle").textContent = "Happy birthday!";
+    $("bdaySub").textContent = myWishes
+      ? myWishes + (myWishes === 1 ? " colleague has" : " colleagues have") + " wished you today."
+      : "Your colleagues can wish you here today.";
+    $("bdayMine").style.display = wishes.length ? "block" : "none";
+    $("bdayMine").innerHTML = wishes.map(w =>
+      '<div class="bwish"><span class="who2">' + esc(w.name) + "</span>" +
+      (w.message ? '<span style="font-size:.8rem;color:var(--ink2)">' + esc(w.message) + "</span>" : "") +
+      "</div>").join("");
+  } else {
+    $("bdayTitle").textContent = birthdays.length === 1 ? "A birthday today" : "Birthdays today";
+    $("bdaySub").textContent = "Send a quick wish.";
+    $("bdayMine").style.display = "none";
+  }
+
+  $("bdayList").innerHTML = birthdays.map(b => {
+    const done = alreadyWished.indexOf(b.emp_id) >= 0;
+    return '<div class="bwish"><span class="who2">' + esc(b.name) + "</span>" +
+      '<button ' + (done ? "disabled" : 'onclick="wish(\'' + b.emp_id + '\')"') + ">" +
+      (done ? "Wished ✓" : "Wish") + "</button></div>";
+  }).join("");
+}
+
+function esc(t) {
+  return String(t == null ? "" : t).replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function wish(toId) {
+  if (alreadyWished.indexOf(toId) >= 0) return;
+  alreadyWished.push(toId);
+  renderBirthdays(false, []);
+  try {
+    await api("/birthdays/wish", { from_emp_id: session.emp_id, to_emp_id: toId });
+    toast("Wish sent");
+  } catch (e) {
+    alreadyWished = alreadyWished.filter(x => x !== toId);
+    renderBirthdays(false, []);
+    toast(e.message, true);
+  }
+}
 
 /* ── Weekly off ──────────────────────────────────────────────── */
 function openWeeklyOff() {

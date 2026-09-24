@@ -61,7 +61,7 @@ ENABLE_SCHEDULER  = os.getenv("ENABLE_SCHEDULER", "1") == "1"
 # short self-ping keeps it warm. Confined to a daily window because free
 # instance-hours are capped — see SETUP.md.
 KEEPALIVE_URL     = os.getenv("KEEPALIVE_URL", "").rstrip("/")
-KEEPALIVE_MINUTES = int(os.getenv("KEEPALIVE_MINUTES", "12"))
+KEEPALIVE_MINUTES = int(os.getenv("KEEPALIVE_MINUTES", "10"))   # must stay under 15
 KEEPALIVE_FROM    = int(os.getenv("KEEPALIVE_FROM_HOUR", "6"))    # IST, inclusive
 KEEPALIVE_TO      = int(os.getenv("KEEPALIVE_TO_HOUR", "22"))     # IST, exclusive
 
@@ -191,6 +191,42 @@ def reminder_hours() -> List[int]:
     return hours or list(DEFAULT_REMINDER_HOURS)
 
 
+def setting_int(key: str, default: int) -> int:
+    try:
+        return int(str(app_settings().get(key, default)).strip())
+    except Exception:
+        return default
+
+
+def parse_hours(raw) -> List[int]:
+    return sorted({int(x) for x in str(raw or "").split(",")
+                   if x.strip().lstrip("-").isdigit() and 0 <= int(x) <= 23})
+
+
+def employee_prefs(emp_ids=None) -> dict:
+    """
+    {emp_id: {"weekly_off", "hours", "preferred_meal"}} — everything the
+    reminder round needs about a person, in one query.
+    """
+    try:
+        q = supabase.table("employee_settings").select(
+            "emp_id, weekly_off, reminder_hours, preferred_meal")
+        if emp_ids:
+            q = q.in_("emp_id", list(emp_ids))
+        rows = q.execute().data or []
+    except Exception as e:
+        log.warning("Could not read employee_settings: %s", e)
+        return {}
+    out = {}
+    for r in rows:
+        out[r["emp_id"]] = {
+            "weekly_off": r.get("weekly_off"),
+            "hours": parse_hours(r.get("reminder_hours")),
+            "preferred_meal": r.get("preferred_meal"),
+        }
+    return out
+
+
 def weekly_off_map(emp_ids=None) -> dict:
     """{emp_id: weekday int} — Mon=0 … Sun=6. Missing means never asked."""
     try:
@@ -295,6 +331,12 @@ async def lifespan(app: FastAPI):
                 send_daily_reminders,
                 CronTrigger(minute=0, timezone=IST),
                 id="reminder-sweep",
+                replace_existing=True,
+            )
+            scheduler.add_job(
+                send_birthday_greetings,
+                CronTrigger(hour=setting_int("birthday_hour", 8), minute=5, timezone=IST),
+                id="birthday-greetings",
                 replace_existing=True,
             )
             scheduler.start()
@@ -459,33 +501,67 @@ async def get_settings():
 
 @app.get("/employee/{emp_id}/settings")
 async def get_employee_settings(emp_id: str):
-    off = weekly_off_for(emp_id)
+    try:
+        res = supabase.table("employee_settings").select("*").eq("emp_id", emp_id).execute()
+        row = (res.data or [{}])[0]
+    except Exception:
+        row = {}
+    off = row.get("weekly_off")
+    hours = parse_hours(row.get("reminder_hours"))
     return {
         "emp_id": emp_id,
         "weekly_off": off,
         "weekly_off_name": WEEKDAY_NAMES[off] if off is not None else None,
         "asked": off is not None,
+        "reminder_hours": hours,
+        "default_reminder_hours": reminder_hours(),
+        "using_default_hours": not hours,
+        "preferred_meal": row.get("preferred_meal"),
+        "birthday_visible": row.get("birthday_visible"),
+        "birthday_asked": bool(row.get("birthday_asked")),
     }
 
 
 class EmployeeSettings(BaseModel):
-    weekly_off: Optional[int] = None      # Mon=0 … Sun=6, or null for none
+    weekly_off: Optional[int] = None          # Mon=0 … Sun=6, or null for none
+    reminder_hours: Optional[List[int]] = None    # IST hours; empty list = plant default
+    preferred_meal: Optional[str] = None      # breakfast | lunch | snacks | dinner
+    birthday_visible: Optional[bool] = None
 
 
 @app.post("/employee/{emp_id}/settings")
 async def set_employee_settings(emp_id: str, req: EmployeeSettings):
-    off = req.weekly_off
-    if off is not None and not (0 <= off <= 6):
-        raise HTTPException(400, "weekly_off must be 0 (Monday) to 6 (Sunday)")
-    supabase.table("employee_settings").upsert(
-        {"emp_id": emp_id, "weekly_off": off, "updated_at": get_ist_now().isoformat()},
-        on_conflict="emp_id",
-    ).execute()
-    return {
-        "status": "saved",
-        "weekly_off": off,
-        "weekly_off_name": WEEKDAY_NAMES[off] if off is not None else None,
-    }
+    """
+    Partial update: only the fields present in the body are written, so the
+    portal can save one preference without clobbering the others.
+    """
+    payload = {"emp_id": emp_id, "updated_at": get_ist_now().isoformat()}
+    sent = req.model_dump(exclude_unset=True) if hasattr(req, "model_dump") else req.dict(exclude_unset=True)
+
+    if "weekly_off" in sent:
+        off = req.weekly_off
+        if off is not None and not (0 <= off <= 6):
+            raise HTTPException(400, "weekly_off must be 0 (Monday) to 6 (Sunday)")
+        payload["weekly_off"] = off
+
+    if "reminder_hours" in sent:
+        hrs = sorted({h for h in (req.reminder_hours or []) if 0 <= h <= 23})
+        if len(hrs) > 4:
+            raise HTTPException(400, "Choose at most 4 reminder times.")
+        payload["reminder_hours"] = ",".join(str(h) for h in hrs) if hrs else None
+
+    if "preferred_meal" in sent:
+        m = req.preferred_meal
+        if m is not None and m not in meal_types():
+            raise HTTPException(400, f"preferred_meal must be one of {meal_types()}")
+        payload["preferred_meal"] = m
+
+    if "birthday_visible" in sent:
+        payload["birthday_visible"] = req.birthday_visible
+        payload["birthday_asked"] = True
+
+    supabase.table("employee_settings").upsert(payload, on_conflict="emp_id").execute()
+    return await get_employee_settings(emp_id)
 
 
 @app.get("/day/{meal_date}")
@@ -741,6 +817,202 @@ async def get_all_meals_with_tokens(emp_id: str):
 async def get_usual_meal(emp_id: str):
     """The meal this employee books most often — used to label the reminder."""
     return {"meal_type": usual_meal(emp_id)}
+
+
+# ═══ Suggestions, feedback and queries ════════════════════════════════════════
+FEEDBACK_CATEGORIES = ["suggestion", "food_quality", "quantity", "hygiene", "query", "other"]
+
+
+class FeedbackRequest(BaseModel):
+    emp_id: Optional[str] = None
+    category: str = "suggestion"
+    message: str
+    anonymous: bool = False
+    meal_date: Optional[str] = None
+    meal_type: Optional[str] = None
+
+
+@app.get("/feedback/categories")
+async def feedback_categories():
+    return {"categories": FEEDBACK_CATEGORIES}
+
+
+@app.post("/feedback")
+async def submit_feedback(req: FeedbackRequest):
+    msg = (req.message or "").strip()
+    if len(msg) < 3:
+        raise HTTPException(400, "Please write a little more.")
+    if len(msg) > 2000:
+        raise HTTPException(400, "That's too long — keep it under 2000 characters.")
+    if req.category not in FEEDBACK_CATEGORIES:
+        raise HTTPException(400, f"category must be one of {FEEDBACK_CATEGORIES}")
+
+    row = {
+        # Anonymous means anonymous: the employee id is never written, so it
+        # cannot be recovered later by anyone with database access.
+        "emp_id": None if req.anonymous else (req.emp_id or None),
+        "category": req.category,
+        "message": msg,
+        "meal_date": req.meal_date,
+        "meal_type": req.meal_type,
+        "status": "new",
+    }
+    supabase.table("canteen_feedback").insert(row).execute()
+    return {"status": "received", "anonymous": req.anonymous}
+
+
+@app.get("/employee/{emp_id}/feedback")
+async def my_feedback(emp_id: str, limit: int = 10):
+    """Only what this employee submitted under their name. Anonymous
+    submissions are not linked to anyone and never appear here."""
+    res = supabase.table("canteen_feedback") \
+        .select("id, category, message, status, response, created_at") \
+        .eq("emp_id", emp_id).order("created_at", desc=True).limit(min(limit, 50)).execute()
+    return {"feedback": res.data or []}
+
+
+@app.get("/admin/feedback")
+async def list_feedback(status: Optional[str] = None, limit: int = 100,
+                        x_reminder_secret: str = Header(default="")):
+    if REMINDER_SECRET and x_reminder_secret != REMINDER_SECRET:
+        raise HTTPException(401, "Bad reminder secret")
+    q = supabase.table("canteen_feedback").select("*")
+    if status:
+        q = q.eq("status", status)
+    res = q.order("created_at", desc=True).limit(min(limit, 500)).execute()
+    return {"feedback": res.data or []}
+
+
+# ═══ Birthdays ════════════════════════════════════════════════════════════════
+# The API never returns a date of birth or an age — only who has a birthday
+# today, and only for employees who chose to be listed.
+
+class WishRequest(BaseModel):
+    from_emp_id: str
+    to_emp_id: str
+    message: Optional[str] = None
+
+
+@app.get("/birthdays/today")
+async def birthdays_today(emp_id: Optional[str] = None):
+    try:
+        rows = supabase.table("todays_birthdays").select("emp_id, name").execute().data or []
+    except Exception as e:
+        log.warning("Birthday view unavailable: %s", e)
+        return {"birthdays": [], "wished": []}
+
+    wished = []
+    if emp_id:
+        try:
+            w = supabase.table("birthday_wishes").select("to_emp_id") \
+                .eq("from_emp_id", emp_id).eq("wish_date", str(get_ist_now().date())).execute()
+            wished = [r["to_emp_id"] for r in (w.data or [])]
+        except Exception:
+            pass
+
+    return {
+        "birthdays": [r for r in rows if r["emp_id"] != emp_id],
+        "is_my_birthday": any(r["emp_id"] == emp_id for r in rows) if emp_id else False,
+        "wished": wished,
+    }
+
+
+@app.post("/birthdays/wish")
+async def send_wish(req: WishRequest):
+    if req.from_emp_id == req.to_emp_id:
+        raise HTTPException(400, "You can't wish yourself.")
+    today = get_ist_now().date()
+
+    listed = supabase.table("todays_birthdays").select("emp_id") \
+        .eq("emp_id", req.to_emp_id).execute().data or []
+    if not listed:
+        raise HTTPException(404, "That employee isn't on today's birthday list.")
+
+    try:
+        supabase.table("birthday_wishes").insert({
+            "to_emp_id": req.to_emp_id,
+            "from_emp_id": req.from_emp_id,
+            "wish_date": str(today),
+            "message": (req.message or "").strip()[:200] or None,
+        }).execute()
+    except Exception:
+        return {"status": "already_wished"}
+    return {"status": "sent"}
+
+
+@app.get("/employee/{emp_id}/wishes")
+async def my_wishes(emp_id: str):
+    today = str(get_ist_now().date())
+    res = supabase.table("birthday_wishes").select("from_emp_id, message") \
+        .eq("to_emp_id", emp_id).eq("wish_date", today).execute()
+    rows = res.data or []
+    names = {}
+    if rows:
+        ids = list({r["from_emp_id"] for r in rows})
+        try:
+            emps = supabase.table("employees").select("emp_id, name").in_("emp_id", ids).execute()
+            names = {e["emp_id"]: e["name"] for e in (emps.data or [])}
+        except Exception:
+            pass
+    return {"count": len(rows),
+            "wishes": [{"name": names.get(r["from_emp_id"], r["from_emp_id"]),
+                        "message": r.get("message")} for r in rows]}
+
+
+BIRTHDAY_ROUND_HOUR = -1      # reminder_rounds marker for the daily greeting
+
+
+def send_birthday_greetings(force: bool = False):
+    """One push to each employee whose birthday it is. Runs once a day."""
+    if not (VAPID_PRIVATE_KEY and VAPID_SUBJECT):
+        return {"sent": 0, "reason": "push not configured"}
+
+    today = get_ist_now().date()
+    if not force and not claim_round(today, BIRTHDAY_ROUND_HOUR):
+        return {"sent": 0, "reason": "birthday greetings already sent today"}
+
+    try:
+        people = supabase.table("todays_birthdays").select("emp_id, name").execute().data or []
+    except Exception as e:
+        log.warning("Birthday greetings skipped: %s", e)
+        return {"sent": 0, "reason": str(e)}
+    if not people:
+        if not force:
+            finish_round(today, BIRTHDAY_ROUND_HOUR, 0)
+        return {"sent": 0, "reason": "no birthdays today"}
+
+    ids = [p["emp_id"] for p in people]
+    subs = supabase.table("push_subscriptions") \
+        .select("emp_id, endpoint, p256dh, auth").in_("emp_id", ids).execute().data or []
+    name_of = {p["emp_id"]: (p["name"] or "").split()[0] for p in people}
+
+    sent = 0
+    for sub in subs:
+        first = name_of.get(sub["emp_id"], "")
+        payload = json.dumps({
+            "title": f"Happy birthday{', ' + first if first else ''}!",
+            "body": "Everyone at the canteen wishes you a wonderful day.",
+            "emp_id": sub["emp_id"],
+            "date": str(today),
+            "meals": [],
+            "kind": "birthday",
+        })
+        ok, _ = send_one(sub, payload, 12 * 3600, topic="bday%s" % today.strftime("%y%m%d"))
+        if ok:
+            sent += 1
+
+    if not force:
+        finish_round(today, BIRTHDAY_ROUND_HOUR, sent)
+    log.info("Birthday greetings: %s people, %s devices reached", len(people), sent)
+    return {"sent": sent, "people": len(people)}
+
+
+@app.post("/birthdays/send-greetings")
+async def trigger_birthday_greetings(force: bool = False,
+                                     x_reminder_secret: str = Header(default="")):
+    if REMINDER_SECRET and x_reminder_secret != REMINDER_SECRET:
+        raise HTTPException(401, "Bad reminder secret")
+    return send_birthday_greetings(force=force)
 
 
 # ═══ Push notifications ═══════════════════════════════════════════════════════
@@ -1072,20 +1344,32 @@ def send_daily_reminders(force: bool = False):
     hour = now.hour
     attempted_failures = 0
 
-    hours = reminder_hours()
+    hours = reminder_hours()                 # the plant default
+    prefs = employee_prefs()                 # whatever each employee chose
+
+    # An employee is due a nudge this hour if they picked it, or if they never
+    # picked anything and the plant default includes it.
+    def hours_for(emp: str) -> List[int]:
+        p = prefs.get(emp) or {}
+        return p.get("hours") or hours
+
     if not force:
-        if hour not in hours:
-            return {"sent": 0, "reason": f"no round due at {hour:02d}:00 IST",
+        wanted_now = set(hours)
+        for p in prefs.values():
+            wanted_now.update(p.get("hours") or [])
+        if hour not in wanted_now:
+            return {"sent": 0, "reason": f"nobody asked to be reminded at {hour:02d}:00 IST",
                     "reminder_hours": hours}
         if not claim_round(now.date(), hour):
             return {"sent": 0, "reason": f"round {hour:02d}:00 already sent",
                     "reminder_hours": hours}
 
-    # The last round of the day asks about tomorrow: by then the earlier meals
-    # are shut and only tomorrow's count is still worth collecting. Everything
-    # before it asks about today.
-    last_round = max(hours) if hours else 18
-    target = now.date() if hour < last_round else now.date() + timedelta(days=1)
+    # From this hour on, the question is about tomorrow — the earlier meals have
+    # closed and only tomorrow's count is still worth collecting. Configurable
+    # via the tomorrow_from_hour row in app_settings, because "the last round"
+    # stops meaning anything once every employee picks their own times.
+    tomorrow_from = setting_int("tomorrow_from_hour", 17)
+    target = now.date() if hour < tomorrow_from else now.date() + timedelta(days=1)
 
     serving, reason = day_status(target)
     if not serving:
@@ -1104,10 +1388,8 @@ def send_daily_reminders(force: bool = False):
     subs_res = supabase.table("push_subscriptions").select("emp_id, endpoint, p256dh, auth").execute()
 
     # Don't buzz someone on their day off.
-    sub_emps = {r["emp_id"] for r in (subs_res.data or [])}
-    offs = weekly_off_map(sub_emps)
     target_weekday = target.weekday()
-    resting = {e for e, off in offs.items() if off == target_weekday}
+    resting = {e for e, p in prefs.items() if p.get("weekly_off") == target_weekday}
 
     sent, dropped = 0, 0
     # Say "canteen" out loud. A good number of employees bring a tiffin from
@@ -1124,6 +1406,7 @@ def send_daily_reminders(force: bool = False):
     usual_by_emp = {}
 
     skipped_off = 0
+    skipped_hour = 0
     for s in (subs_res.data or []):
         emp = s["emp_id"]
         if emp in answered:
@@ -1131,9 +1414,15 @@ def send_daily_reminders(force: bool = False):
         if emp in resting:
             skipped_off += 1
             continue
+        if not force and hour not in hours_for(emp):
+            skipped_hour += 1          # this employee asked for a different time
+            continue
 
         if emp not in usual_by_emp:
-            u = usual_meal(emp)
+            # A preference the employee actually stated wins over one inferred
+            # from their booking history.
+            chosen = (prefs.get(emp) or {}).get("preferred_meal")
+            u = chosen if chosen in meals else usual_meal(emp)
             usual_by_emp[emp] = u if (u in meals) else None
         pick = usual_by_emp[emp]
 
@@ -1178,11 +1467,12 @@ def send_daily_reminders(force: bool = False):
         else:
             finish_round(now.date(), hour, sent)
 
-    log.info("Round %02d:00 for %s — sent=%s off=%s dropped=%s failed=%s meals=%s",
-             hour, target, sent, skipped_off, dropped, attempted_failures, meals)
+    log.info("Round %02d:00 for %s — sent=%s off=%s other-time=%s dropped=%s failed=%s meals=%s",
+             hour, target, sent, skipped_off, skipped_hour, dropped, attempted_failures, meals)
     return {"sent": sent, "dropped": dropped, "failed": attempted_failures,
-            "weekly_off_skipped": skipped_off, "meals": meals, "date": str(target),
-            "round_hour": hour, "reminder_hours": hours}
+            "weekly_off_skipped": skipped_off, "other_time_skipped": skipped_hour,
+            "meals": meals, "date": str(target), "round_hour": hour,
+            "reminder_hours": hours}
 
 
 # ── Dynamic date route — MUST stay last ───────────────────────────────────────

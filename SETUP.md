@@ -67,39 +67,62 @@ Set it in bulk if you already know: there's an insert at the bottom of `sql/sche
 
 ## Keeping Render awake
 
-Render's free tier spins a service down after ~15 minutes with no inbound request, and the cold start that follows takes 30–60 seconds. Two fixes, and **you want both**.
+Render's free tier spins a service down after **15 minutes** with no inbound request, and the cold start takes 30–60 seconds. Three layers, in order of how much they matter.
 
-### The new `/ping` endpoint
+### 1. An uptime monitor hitting /ping — the one that actually works
 
-```
-GET /ping  →  {"ok": true, "ist": "2026-08-21 07:00:03"}
-```
+This is the important one, because **a sleeping process cannot wake itself**. Only an outside request can.
 
-No database call, no auth. Point warm-up traffic here rather than `/health`, which queries Supabase on every hit.
-
-### 1. Self-ping from inside the service
-
-The service calls its own `/ping` on a timer. A request it makes to itself still counts as inbound traffic, so it never goes idle.
+Use cron-job.org (free, 1-minute resolution) or UptimeRobot (free, 5-minute):
 
 ```
-KEEPALIVE_URL       = https://canteen-portal-api.onrender.com
-KEEPALIVE_MINUTES   = 12
-KEEPALIVE_FROM_HOUR = 6      # IST
-KEEPALIVE_TO_HOUR   = 22     # IST
+GET https://canteen-api-service.onrender.com/ping   every 5-10 minutes
 ```
 
-**Why the window matters.** The free plan gives 750 instance-hours a month. Awake 24/7 is about 730 hours — it fits, but only barely, and only if this is your *only* free service. Add anything else on the free plan and you blow the cap and everything stops. 06:00–22:00 IST is roughly 490 hours, comfortably inside the limit, and covers every hour anyone actually books a meal. Static Sites don't consume instance-hours, so the frontend is free either way.
+`/ping` does no database work, so this costs the service almost nothing. **Keep the interval under 15 minutes or it defeats the purpose** — that was the bug in the old setup, where the cron ran every 30 minutes and the service slept through half of each cycle.
 
-**The catch:** a sleeping process can't wake itself. If the service does go down — a deploy, a crash, a Render restart, or the first morning after the overnight window — nothing inside it can bring it back. That's what the second half is for.
+A dedicated monitor beats GitHub Actions for this job: the timing is honoured, it doesn't consume Actions minutes, and it emails you when the service is actually down.
 
-### 2. External cron — the reliable half
+### 2. The service pinging itself
 
-`.github/workflows/canteen-cron.yml` is included and ready to commit. It warms the service every 10 minutes during canteen hours and fires the reminder rounds, retrying five times so a cold start never drops a round.
+`KEEPALIVE_URL` makes the service call its own `/ping` every 10 minutes. A request it makes to itself still counts as inbound traffic, so it stays awake once awake. It cannot recover from sleep, so treat it as a supplement to layer 1, never a replacement.
 
-Add two repository secrets under **Settings → Secrets and variables → Actions**:
+```
+KEEPALIVE_URL       = https://canteen-api-service.onrender.com
+KEEPALIVE_MINUTES   = 10        # must stay under 15
+KEEPALIVE_FROM_HOUR = 6         # IST
+KEEPALIVE_TO_HOUR   = 22        # IST
+```
 
-| Secret | Value |
+### 3. GitHub Actions
+
+Now runs every 10 minutes instead of 30, so it doubles as keep-warm while still firing the reminder rounds.
+
+| Secret / variable | Where |
 |---|---|
+| `API_BASE` | GitHub repo → Settings → Secrets and variables → Actions → **Variables** |
+| `REMINDER_SECRET` | same page, **Secrets** tab |
+
+**Two traps with Actions as a keep-alive.** GitHub disables scheduled workflows in a repository after **60 days without a commit** — silently. And scheduled runs are best-effort; under load they can be delayed 5–15 minutes or skipped. Fine for reminders, not dependable as the only thing keeping the service awake.
+
+### Why the window, not 24/7
+
+Free instance-hours are capped at 750/month.
+
+| Approach | Hours used | Headroom |
+|---|---|---|
+| Awake 24/7 | 744 | 6 hours — one deploy loop from suspension |
+| 05:30–22:30 IST | 527 | 223 hours |
+
+And that's assuming this is your **only** free web service. Add another and 24/7 blows the cap, at which point everything is suspended until the month rolls over. The window covers every hour anyone books a meal, so there's nothing to gain from the extra 217 hours.
+
+Static Sites don't consume instance-hours, so the frontend is free regardless.
+
+### Worth saying plainly
+
+All of this is working around the spin-down rather than paying for it. Render's Starter tier is about $7/month and removes the whole category: no cold starts, no keep-alive plumbing, no instance-hour ceiling, no 60-day Actions trap. For a system the whole plant relies on to get fed, that's cheap insurance against a class of failure you'd otherwise keep debugging.
+
+---|---|
 | `API_BASE` | `https://canteen-portal-api.onrender.com` |
 | `REMINDER_SECRET` | same value as on the Render service |
 
@@ -139,6 +162,42 @@ order by round_date desc, round_hour;
 ```
 
 A round far below its neighbours means devices are dropping off (stale subscriptions), not a scheduling fault. NULL on an old row means it was claimed and never completed.
+
+---
+
+## Personal preferences, feedback and birthdays
+
+Run `sql/features-preferences-feedback-birthdays.sql`, then redeploy the Web Service and the Static Site.
+
+### Personal reminder times
+
+Each employee picks up to four times from a **Settings** sheet in the portal. Pick none and they follow the plant default in `app_settings.reminder_hours`. A general-shift worker can take 6 AM; someone on second shift can take 1 PM instead of being woken at six.
+
+The cron already calls in every 10 minutes, so no schedule change is needed — the server works out who is due at the current hour.
+
+One consequence: "the last round asks about tomorrow" stops meaning anything once everyone picks their own times. That cutover is now the `tomorrow_from_hour` row in `app_settings` (default 17). Any reminder at or after that hour asks about tomorrow.
+
+### Preferred meal
+
+Also in Settings. The notification's one-tap button offers this meal. It overrides the meal inferred from booking history, which is what the reminder used before — useful for a new joiner with no history, or anyone whose habit has changed.
+
+### Suggestions, feedback and queries
+
+A **Feedback** button on the home screen. Six categories (suggestion, food quality, quantity, hygiene, question, other) and a free-text box.
+
+**There is a "send without my name" option, and it means it.** When ticked, no employee id is written at all — it cannot be recovered later by anyone with database access. That matters: a complaint about food quality or hygiene is exactly the kind of thing people won't raise if they think it's attributable. Expect the anonymous route to carry the more useful complaints.
+
+Read submissions in the Supabase table editor (`canteen_feedback`), or via `GET /admin/feedback?status=new` with the `X-Reminder-Secret` header. Set `status` to `seen`, `actioned` or `closed` as you work through them, and put a reply in `response` — employees see it against their own submission.
+
+### Birthdays
+
+Employees who opt in appear in a **Birthdays today** card for everyone else, with a one-tap **Wish** button. The birthday person gets a push in the morning and sees who wished them.
+
+**The API never returns a date of birth or an age** — the matching happens inside Postgres and only names come out. Leap-day birthdays are observed on 28 February in non-leap years, so nobody is skipped for three years out of four.
+
+**This ships opt-in, deliberately.** A date of birth sits in an HR table, not something employees chose to publish, and a plant-wide list tells everyone the day and month — from which age follows after a year of watching. Most people are happy to be listed. The ones who aren't are rarely the ones who will say so out loud, so the portal asks each person once and lists nobody until they answer. The list fills over a few weeks rather than on day one.
+
+If you would rather default everyone visible, there's a one-line change at the bottom of the SQL file. Tell the workforce first, and leave the opt-out where they can find it.
 
 ---
 
