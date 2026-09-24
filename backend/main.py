@@ -203,11 +203,18 @@ def parse_hours(raw) -> List[int]:
                    if x.strip().lstrip("-").isdigit() and 0 <= int(x) <= 23})
 
 
+_prefs_cache = {"at": None, "rows": {}}
+
+
 def employee_prefs(emp_ids=None) -> dict:
     """
     {emp_id: {"weekly_off", "hours", "preferred_meal"}} — everything the
     reminder round needs about a person, in one query.
     """
+    now = get_ist_now()
+    if (emp_ids is None and _prefs_cache["at"]
+            and (now - _prefs_cache["at"]).total_seconds() < 60):
+        return _prefs_cache["rows"]
     try:
         q = supabase.table("employee_settings").select(
             "emp_id, weekly_off, reminder_hours, preferred_meal")
@@ -216,7 +223,7 @@ def employee_prefs(emp_ids=None) -> dict:
         rows = q.execute().data or []
     except Exception as e:
         log.warning("Could not read employee_settings: %s", e)
-        return {}
+        return _prefs_cache["rows"] if emp_ids is None else {}
     out = {}
     for r in rows:
         out[r["emp_id"]] = {
@@ -224,6 +231,9 @@ def employee_prefs(emp_ids=None) -> dict:
             "hours": parse_hours(r.get("reminder_hours")),
             "preferred_meal": r.get("preferred_meal"),
         }
+    if emp_ids is None:
+        _prefs_cache["at"] = now
+        _prefs_cache["rows"] = out
     return out
 
 
@@ -1357,12 +1367,37 @@ def send_daily_reminders(force: bool = False):
         wanted_now = set(hours)
         for p in prefs.values():
             wanted_now.update(p.get("hours") or [])
-        if hour not in wanted_now:
-            return {"sent": 0, "reason": f"nobody asked to be reminded at {hour:02d}:00 IST",
+
+        # Catch-up window. External schedulers are not punctual — GitHub Actions
+        # in particular queues and drops cron runs, so a call meant for 06:00
+        # can arrive at 06:40 or not at all. Requiring the call to land inside
+        # the exact hour meant most rounds simply never fired.
+        #
+        # So look back: take the most recent hour anyone asked for, and still
+        # run it if the call arrived within the catch-up window. A 6 AM round
+        # triggered at 6:50 is useful; the same round at 11 AM is not, which is
+        # what the window is for.
+        catchup = setting_int("reminder_catchup_minutes", 90)
+        due = [h for h in wanted_now if h <= hour]
+        if not due:
+            return {"sent": 0, "reason": f"no round due by {hour:02d}:{now.minute:02d} IST",
                     "reminder_hours": hours}
+
+        hour = max(due)
+        minutes_late = (now.hour - hour) * 60 + now.minute
+        if minutes_late > catchup:
+            return {"sent": 0,
+                    "reason": (f"round {hour:02d}:00 missed by {minutes_late} min "
+                               f"(catch-up window is {catchup} min)"),
+                    "reminder_hours": hours}
+
         if not claim_round(now.date(), hour):
             return {"sent": 0, "reason": f"round {hour:02d}:00 already sent",
                     "reminder_hours": hours}
+
+        if minutes_late > 5:
+            log.warning("Round %02d:00 running %s min late — check the cron schedule",
+                        hour, minutes_late)
 
     # From this hour on, the question is about tomorrow — the earlier meals have
     # closed and only tomorrow's count is still worth collecting. Configurable

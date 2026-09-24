@@ -65,47 +65,52 @@ Set it in bulk if you already know: there's an insert at the bottom of `sql/sche
 
 ---
 
-## Keeping Render awake
+## Keeping Render awake — and why GitHub Actions can't do it
 
-Render's free tier spins a service down after **15 minutes** with no inbound request, and the cold start takes 30–60 seconds. Three layers, in order of how much they matter.
+Render's free tier spins a service down after **15 minutes** with no inbound request. Something must call it more often than that, reliably.
 
-### 1. An uptime monitor hitting /ping — the one that actually works
+### GitHub Actions is not that something
 
-This is the important one, because **a sleeping process cannot wake itself**. Only an outside request can.
+Measured on this repository with a `*/10` schedule (102 runs/day expected):
 
-Use cron-job.org (free, 1-minute resolution) or UptimeRobot (free, 5-minute):
-
-```
-GET https://canteen-api-service.onrender.com/ping   every 5-10 minutes
-```
-
-`/ping` does no database work, so this costs the service almost nothing. **Keep the interval under 15 minutes or it defeats the purpose** — that was the bug in the old setup, where the cron ran every 30 minutes and the service slept through half of each cycle.
-
-A dedicated monitor beats GitHub Actions for this job: the timing is honoured, it doesn't consume Actions minutes, and it emails you when the service is actually down.
-
-### 2. The service pinging itself
-
-`KEEPALIVE_URL` makes the service call its own `/ping` every 10 minutes. A request it makes to itself still counts as inbound traffic, so it stays awake once awake. It cannot recover from sleep, so treat it as a supplement to layer 1, never a replacement.
-
-```
-KEEPALIVE_URL       = https://canteen-api-service.onrender.com
-KEEPALIVE_MINUTES   = 10        # must stay under 15
-KEEPALIVE_FROM_HOUR = 6         # IST
-KEEPALIVE_TO_HOUR   = 22        # IST
-```
-
-### 3. GitHub Actions
-
-Now runs every 10 minutes instead of 30, so it doubles as keep-warm while still firing the reminder rounds.
-
-| Secret / variable | Where |
+| Run | Gap from previous |
 |---|---|
-| `API_BASE` | GitHub repo → Settings → Secrets and variables → Actions → **Variables** |
-| `REMINDER_SECRET` | same page, **Secrets** tab |
+| Sep 22, 23:42 | — |
+| Sep 23, 09:12 | 9.5 hours |
+| Sep 23, 14:38 | 5.4 hours |
+| Sep 23, 19:49 | 5.2 hours |
+| Sep 24, 00:01 | 4.2 hours |
+| Sep 24, 09:04 | 9.1 hours |
 
-**Two traps with Actions as a keep-alive.** GitHub disables scheduled workflows in a repository after **60 days without a commit** — silently. And scheduled runs are best-effort; under load they can be delayed 5–15 minutes or skipped. Fine for reminders, not dependable as the only thing keeping the service awake.
+Five runs a day instead of 102. One of them fired at 18:31 UTC — an hour outside the cron window entirely, so it was a delayed job from an earlier slot.
 
-### Why the window, not 24/7
+GitHub's documentation says scheduled workflows may be delayed during periods of high load. In practice, high-frequency schedules on free runners are heavily throttled. **And none of those six runs landed on a reminder hour, so no reminder round fired at all across two days.** That, more than anything else, is why notifications were arriving "sometimes".
+
+The workflow is now hourly and is a **backup only**.
+
+### Use an uptime monitor instead
+
+One job, every 10 minutes, does both keep-warm and reminders:
+
+```
+POST https://canteen-api-service.onrender.com/push/run-reminders
+Header: X-Reminder-Secret: <your secret>
+Every 10 minutes, 05:30–22:30 IST
+```
+
+The call returns immediately when no round is due, so it costs almost nothing and doubles as the keep-alive.
+
+**cron-job.org** (free, 1-minute resolution, supports POST and custom headers) or **UptimeRobot** (free, 5-minute) both work and actually run on time. Either emails you when the service is down, which GitHub Actions will not.
+
+If your monitor only supports GET, point it at `/ping` every 10 minutes for keep-warm and add three separate POST jobs for the reminder hours.
+
+### The server now tolerates a late call
+
+Requiring the call to land inside the exact hour was too brittle for any real scheduler. A round now still fires if the call arrives within **90 minutes** of its hour — configurable via the `reminder_catchup_minutes` row in `app_settings`.
+
+A 6 AM round triggered at 6:50 is still useful. The same round at 11 AM is not, which is what the window is for. Running late is logged as a warning so you can see it happening.
+
+### Why a daily window, not 24/7
 
 Free instance-hours are capped at 750/month.
 
@@ -114,13 +119,13 @@ Free instance-hours are capped at 750/month.
 | Awake 24/7 | 744 | 6 hours — one deploy loop from suspension |
 | 05:30–22:30 IST | 527 | 223 hours |
 
-And that's assuming this is your **only** free web service. Add another and 24/7 blows the cap, at which point everything is suspended until the month rolls over. The window covers every hour anyone books a meal, so there's nothing to gain from the extra 217 hours.
-
-Static Sites don't consume instance-hours, so the frontend is free regardless.
+That assumes this is your **only** free web service. Add another and 24/7 blows the cap, suspending everything until the month rolls over. Static Sites don't consume instance-hours.
 
 ### Worth saying plainly
 
-All of this is working around the spin-down rather than paying for it. Render's Starter tier is about $7/month and removes the whole category: no cold starts, no keep-alive plumbing, no instance-hour ceiling, no 60-day Actions trap. For a system the whole plant relies on to get fed, that's cheap insurance against a class of failure you'd otherwise keep debugging.
+You have now spent several rounds of debugging on symptoms that all trace back to not paying for the service. Render's Starter tier is about $7/month and removes the whole category at once: no spin-down, no cold starts, no keep-alive plumbing, no instance-hour ceiling, no dependence on someone else's best-effort scheduler.
+
+For a system the whole plant relies on to get fed, and one where the failure mode is silent, that is a small price for not having to think about this again.
 
 ---|---|
 | `API_BASE` | `https://canteen-portal-api.onrender.com` |

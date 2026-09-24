@@ -21,12 +21,16 @@ name: Canteen keep-warm and reminders
 
 on:
   schedule:
-    # Every 10 min, 00:00–17:00 UTC = 05:30–22:30 IST.
-    # MUST be under 15 minutes: Render's free tier spins the service down
-    # after 15 minutes with no inbound request, and the cold start that
-    # follows takes most of a minute. At 30 minutes the service was asleep
-    # for half of every cycle.
-    - cron: "*/10 0-17 * * *"
+    # BACKUP ONLY — hourly. Do not rely on this.
+    #
+    # GitHub queues and drops scheduled runs. Measured on this repository: a
+    # */10 schedule (102 runs/day) actually produced about 5 runs/day, at
+    # arbitrary times, none of which coincided with a reminder hour. Lower
+    # frequencies are honoured somewhat better, which is why this is hourly.
+    #
+    # The real schedule belongs in an uptime monitor hitting the API every
+    # 10 minutes — see "Keeping Render awake" in SETUP.md.
+    - cron: "5 * * * *"
   workflow_dispatch:
     inputs:
       force:
