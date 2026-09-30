@@ -12,7 +12,7 @@ const API = (() => {
   } catch (_) { return ""; }
 })();
 
-const CACHE = "canteen-v3";
+const CACHE = "canteen-v4";
 const SHELL = ["./", "./index.html", "./env.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", event => {

@@ -49,6 +49,11 @@ body{
 }
 .display{font-family:'Bricolage Grotesque','Inter Tight',system-ui,sans-serif;font-weight:700;letter-spacing:-.03em;line-height:1.08}
 button,input{font:inherit;color:inherit}
+/* No 300ms double-tap-zoom wait, and the browser can start the press
+   feedback without waiting for any script. */
+button,.meal,.dayswitch button,.hourgrid button,.daygrid button{touch-action:manipulation}
+.hourgrid button:active,.daygrid button:active,.btn:active,.bwish button:active{transform:scale(.96)}
+.hourgrid button,.daygrid button{transition:background .1s,border-color .1s,color .1s,transform .08s}
 :focus-visible{outline:2.5px solid var(--turmeric);outline-offset:2px;border-radius:6px}
 
 /* ── Shell ─────────────────────────────────────────── */
@@ -158,7 +163,10 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
   background:var(--card);border:1px solid var(--line);border-radius:12px;
   padding:.85rem .95rem .85rem 1rem;min-height:68px;cursor:pointer;overflow:hidden;
   transition:border-color .18s, background .18s, transform .12s}
-.meal:active{transform:scale(.99)}
+.meal:active{transform:scale(.99);background:var(--sunk)}
+/* The state flip must be instant. Transitions here only soften colour,
+   never the appearance of the tick itself. */
+.meal{transition:border-color .12s,background .12s,transform .08s}
 .meal .tile{width:36px;height:36px;border-radius:10px;flex-shrink:0;display:grid;place-items:center;
   background:var(--sunk);color:var(--ink2);transition:background .18s,color .18s}
 .meal .tile svg{width:21px;height:21px}
@@ -167,7 +175,8 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
 .meal .box{margin-left:auto;width:26px;height:26px;border-radius:8px;border:2px solid var(--line);flex-shrink:0;
   display:grid;place-items:center;transition:background .18s,border-color .18s}
 .meal .box svg{width:14px;height:14px;stroke:var(--on-leaf);stroke-width:3.2;fill:none;
-  stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.6);transition:opacity .18s,transform .18s}
+  stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.6);
+  transition:opacity .09s,transform .09s}
 
 .meal.on{border-color:color-mix(in srgb, var(--leaf) 45%, var(--line));background:color-mix(in srgb, var(--leaf-soft) 55%, var(--card))}
 .meal.on .tile{background:var(--leaf);color:var(--on-leaf)}
@@ -412,7 +421,9 @@ main{width:100%;max-width:440px;margin:0 auto;padding:1.15rem 1.15rem calc(2.5re
       </div>
     </div>
 
-    <button class="btn btn-quiet" style="margin-top:1rem" onclick="closeSheetById('prefScrim')">Done</button>
+    <p class="footnote" id="buildStamp" style="margin-top:.4rem"></p>
+    <button class="btn btn-quiet" style="margin-top:.5rem" onclick="closeSheetById('prefScrim')">Done</button>
+    <button class="btn btn-quiet" onclick="forceUpdate()">Force update</button>
   </div>
 </div>
 
@@ -472,6 +483,7 @@ function resolveApi() {
   return v.replace(/\/+$/, "");
 }
 const API = resolveApi();
+const BUILD = ((window.__APP_ENV__ || {}).BUILD) || "unknown";
 
 /* Meal types come from the meal_timelines table, so adding 'snacks' there
    makes it appear here with no code change. These are only the fallback
@@ -529,6 +541,7 @@ let preferredMeal = null;
 let birthdayVisible = null;
 let birthdayAsked = false;
 let fbCategory = "suggestion";
+let lastMealShape = null;
 let offAsked = false;
 let pushMode = "off";
 let lastPushError = null;
@@ -820,6 +833,7 @@ async function refresh() {
 }
 
 function setDay(i) {
+  lastMealShape = null;
   dayIdx = i;
   $("tabToday").classList.toggle("on", i === 0);
   $("tabTom").classList.toggle("on", i === 1);
@@ -877,6 +891,27 @@ function cutoffText(type, dstr) {
   const d = dayInfo(dstr);
   if (d && d.meals[type]) return d.meals[type].end_time || "";
   return (timelines[type] && timelines[type].end_time) || "";
+}
+
+/* ── Instant feedback ────────────────────────────────────────
+   Rebuilding a list's innerHTML takes a few hundred milliseconds on a
+   low-end phone — long enough that people tap a second time thinking the
+   first tap missed, which then undoes it. So the tapped control flips its
+   own class immediately; the fuller render that follows finds the DOM
+   already in the right state and changes nothing visible. */
+function paintMeal(type, on) {
+  document.querySelectorAll('.meal[data-type="' + type + '"]').forEach(el => {
+    el.classList.toggle("on", !!on);
+    el.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+function paintPick(containerId, btn) {
+  const box = $(containerId);
+  if (!box) return;
+  const wasOn = btn.classList.contains("on");
+  box.querySelectorAll("button").forEach(b => b.classList.remove("on"));
+  if (!wasOn) btn.classList.add("on");
 }
 
 /* ── Render ─────────────────────────────────────────── */
@@ -945,6 +980,20 @@ function render() {
     $("stSub").textContent = "No reminders on your off day.";
   }
 
+  /* Only rebuild when the rows themselves change (different date, meal
+     closed, token collected). A plain on/off flip just patches classes,
+     which costs nothing and cannot flicker. */
+  const shape = JSON.stringify([d, off, TYPES.map(t => [t, isOpen(t, d), (tokens[d] || {})[t] ? 1 : 0,
+                                                        t === usualMeal ? 1 : 0])]);
+  if (shape === lastMealShape && $("meals").querySelector(".meal")) {
+    TYPES.forEach(t => paintMeal(t, set.has(t)));
+    const showDeclineFast = openTypes.length && !booked.length && !answered[d];
+    $("declineWrap").style.display = showDeclineFast ? "block" : "none";
+    $("declineBtn").textContent = "Not ordering " + (dayIdx === 0 ? "today" : "tomorrow");
+    return;
+  }
+  lastMealShape = shape;
+
   $("meals").innerHTML =
     (off ? '<div class="offnote">' +
              '<span>\u26A0\uFE0F</span><span>' +
@@ -965,7 +1014,10 @@ async function toggle(type) {
   const want = !regSet(d).has(type);
   const key = d + "|" + type;
 
-  // Paint first, always. The tick never waits on the network.
+  // Paint first, always — this is one class flip and lands in the next
+  // frame. Everything else, including render(), happens after.
+  paintMeal(type, want);
+
   mutationSeq++;
   if (want) regSet(d).add(type); else regSet(d).delete(type);
   pending.set(key, want);
@@ -1110,6 +1162,7 @@ const PICKABLE_HOURS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 21];
 function clock(h) { return (h % 12 || 12) + (h < 12 ? " AM" : " PM"); }
 
 function openPrefs() {
+  $("buildStamp").textContent = "Version " + BUILD;
   renderPrefs();
   $("prefScrim").classList.add("show");
 }
@@ -1117,20 +1170,74 @@ function closeSheetById(id) { $(id).classList.remove("show"); }
 
 function renderPrefs() {
   $("hourGrid").innerHTML = PICKABLE_HOURS.map(h =>
-    '<button class="' + (myHours.indexOf(h) >= 0 ? "on" : "") + '" onclick="toggleHour(' + h + ')">' +
-      clock(h) + "</button>").join("");
+    '<button class="' + (myHours.indexOf(h) >= 0 ? "on" : "") +
+      '" onclick="toggleHour(' + h + ', this)">' + clock(h) + "</button>").join("");
 
   $("prefMeals").innerHTML = TYPES.map(t =>
-    '<button class="' + (preferredMeal === t ? "on" : "") + '" onclick="setPreferredMeal(\'' + t + '\')">' +
-      label(t) + "</button>").join("");
+    '<button class="' + (preferredMeal === t ? "on" : "") +
+      '" onclick="setPreferredMeal(\'' + t + '\', this)">' + label(t) + "</button>").join("");
 
   $("prefOff").innerHTML = DAY_SHORT.map((n, i) =>
-    '<button class="' + (weeklyOff === i ? "on" : "") + '" onclick="saveWeeklyOff(' + i + ')">' +
-      n + "</button>").join("") +
-    '<button class="' + (weeklyOff === null && offAsked ? "on" : "") + '" onclick="saveWeeklyOff(null)">None</button>';
+    '<button class="' + (weeklyOff === i ? "on" : "") +
+      '" onclick="saveWeeklyOff(' + i + ', this)">' + n + "</button>").join("") +
+    '<button class="' + (weeklyOff === null && offAsked ? "on" : "") +
+      '" onclick="saveWeeklyOff(null, this)">None</button>';
 
   $("bdayYes").className = birthdayVisible === true ? "on" : "";
   $("bdayNo").className = birthdayVisible === false ? "on" : "";
+}
+
+/* Preferences are saved through a queue, not one request per tap.
+   Four quick taps used to fire four concurrent saves, each carrying a
+   snapshot of the list at that instant. The replies came back out of order
+   and each one repainted the grid from its stale snapshot — boxes ticking
+   on, then off, then on. Worse, whichever reply landed last won, so the
+   screen could end up disagreeing with what was actually stored.
+   Now: local state is the truth, edits are merged, and at most one request
+   is ever in flight. */
+let prefSeq = 0, prefSaving = false, prefDirty = null, prefTimer = null;
+
+function queuePrefSave(patch, undo) {
+  prefDirty = Object.assign(prefDirty || {}, patch);
+  if (undo) prefUndo.push(undo);
+  prefSeq++;
+  clearTimeout(prefTimer);
+  prefTimer = setTimeout(flushPrefs, 400);     // let a burst of taps settle
+}
+let prefUndo = [];
+
+async function flushPrefs() {
+  if (prefSaving || !prefDirty) return;
+  if ("reminder_hours" in prefDirty) prefDirty.reminder_hours = myHours.slice();
+  const body = prefDirty;
+  const undos = prefUndo;
+  const mine = prefSeq;
+  prefDirty = null;
+  prefUndo = [];
+  prefSaving = true;
+  try {
+    const d = await api("/employee/" + encodeURIComponent(session.emp_id) + "/settings", body);
+    // Only adopt the server's answer if nothing was tapped while it was out.
+    if (mine === prefSeq) adoptPrefs(d);
+  } catch (e) {
+    undos.forEach(u => { try { u(); } catch (_) {} });
+    renderPrefs();
+    toast(e.message, true);
+  } finally {
+    prefSaving = false;
+    if (prefDirty) flushPrefs();               // another burst arrived
+  }
+}
+
+function adoptPrefs(d) {
+  myHours = d.reminder_hours || [];
+  preferredMeal = d.preferred_meal || null;
+  weeklyOff = (typeof d.weekly_off === "number") ? d.weekly_off : null;
+  offAsked = !!d.asked;
+  birthdayVisible = (typeof d.birthday_visible === "boolean") ? d.birthday_visible : null;
+  birthdayAsked = !!d.birthday_asked;
+  PROMPT_HOURS = myHours.length ? myHours : (d.default_reminder_hours || PROMPT_HOURS);
+  renderOffChip(); renderDayTabs(); renderReminderTimes(); render();
 }
 
 async function savePrefs(patch, undo) {
@@ -1143,7 +1250,9 @@ async function savePrefs(patch, undo) {
     birthdayVisible = (typeof d.birthday_visible === "boolean") ? d.birthday_visible : null;
     birthdayAsked = !!d.birthday_asked;
     PROMPT_HOURS = myHours.length ? myHours : (d.default_reminder_hours || PROMPT_HOURS);
-    renderPrefs(); renderOffChip(); renderDayTabs(); renderReminderTimes(); render();
+    // The sheet already shows the new state from the instant flip above, so
+    // only re-render it if the server disagreed with us.
+    renderOffChip(); renderDayTabs(); renderReminderTimes(); render();
     return true;
   } catch (e) {
     if (undo) undo();
@@ -1153,7 +1262,7 @@ async function savePrefs(patch, undo) {
   }
 }
 
-function toggleHour(h) {
+function toggleHour(h, btn) {
   const before = myHours.slice();
   const i = myHours.indexOf(h);
   if (i >= 0) myHours.splice(i, 1);
@@ -1162,25 +1271,45 @@ function toggleHour(h) {
     myHours.push(h);
   }
   myHours.sort((a, b) => a - b);
-  renderPrefs();
-  savePrefs({ reminder_hours: myHours }, () => { myHours = before; });
+  if (btn) btn.classList.toggle("on", myHours.indexOf(h) >= 0);   // instant
+  renderReminderTimes();
+  queuePrefSave({ reminder_hours: null }, () => { myHours = before; });
 }
 
-function setPreferredMeal(t) {
+function setPreferredMeal(t, btn) {
   const before = preferredMeal;
   preferredMeal = (preferredMeal === t) ? null : t;
-  renderPrefs();
-  savePrefs({ preferred_meal: preferredMeal }, () => { preferredMeal = before; });
+  if (btn) paintPick("prefMeals", btn);                            // instant
+  queuePrefSave({ preferred_meal: preferredMeal }, () => { preferredMeal = before; });
 }
 
 async function setBirthdayVisible(v) {
   const before = birthdayVisible;
   birthdayVisible = v;
-  renderPrefs();
+  $("bdayYes").className = v ? "on" : "";      // instant
+  $("bdayNo").className = v ? "" : "on";
   if (await savePrefs({ birthday_visible: v }, () => { birthdayVisible = before; })) {
     toast(v ? "Colleagues can wish you on your birthday" : "Your birthday stays private");
     loadBirthdays();
   }
+}
+
+/* Clears the service worker and every cache, then reloads. The escape hatch
+   for a phone stuck on an old build — no need to walk anyone through Chrome's
+   site settings. */
+async function forceUpdate() {
+  toast("Updating…");
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch (_) {}
+  location.reload(true);
 }
 
 /* ── Feedback ────────────────────────────────────────────────── */
@@ -1267,7 +1396,7 @@ function renderBirthdays(mine, wishes) {
   $("bdayList").innerHTML = birthdays.map(b => {
     const done = alreadyWished.indexOf(b.emp_id) >= 0;
     return '<div class="bwish"><span class="who2">' + esc(b.name) + "</span>" +
-      '<button ' + (done ? "disabled" : 'onclick="wish(\'' + b.emp_id + '\')"') + ">" +
+      '<button ' + (done ? "disabled" : 'onclick="wish(\'' + b.emp_id + '\', this)"') + ">" +
       (done ? "Wished ✓" : "Wish") + "</button></div>";
   }).join("");
 }
@@ -1277,10 +1406,10 @@ function esc(t) {
     c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-async function wish(toId) {
+async function wish(toId, btn) {
   if (alreadyWished.indexOf(toId) >= 0) return;
+  if (btn) { btn.disabled = true; btn.textContent = "Wished \u2713"; }   // instant
   alreadyWished.push(toId);
-  renderBirthdays(false, []);
   try {
     await api("/birthdays/wish", { from_emp_id: session.emp_id, to_emp_id: toId });
     toast("Wish sent");
@@ -1300,11 +1429,13 @@ function openWeeklyOff() {
 }
 function closeWeeklyOff() { $("woScrim").classList.remove("show"); }
 
-async function saveWeeklyOff(day) {
+async function saveWeeklyOff(day, btn) {
   const prev = weeklyOff;
   weeklyOff = day;
   offAsked = true;
+  if (btn) paintPick("prefOff", btn);          // instant
   closeWeeklyOff();
+  lastMealShape = null;
   renderOffChip();
   renderDayTabs();
   render();
@@ -1322,7 +1453,12 @@ async function saveWeeklyOff(day) {
 }
 
 /* ═══ Reminders ═══════════════════════════════════════ */
-function swUrl() { return "sw.js?api=" + encodeURIComponent(API); }
+/* The build id is in the URL on purpose. A service worker only updates when
+   its script URL or bytes change, so without this a phone can keep running a
+   months-old copy of the app while the server serves a new one. */
+function swUrl() {
+  return "sw.js?api=" + encodeURIComponent(API) + "&v=" + encodeURIComponent(BUILD);
+}
 
 async function initReminders() {
   if (!("Notification" in window) || !("serviceWorker" in navigator)) {
